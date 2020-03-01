@@ -1,11 +1,11 @@
 using Pkg
-Pkg.activate("../..")
-using Profile, TimerOutputs
+Pkg.activate("..")
+using Profile, TimerOutputs, StatProfilerHTML
 include("peps.jl")
 
-Nx  = 6
-Ny  = 6
-mdim = 6
+Nx  = 4 
+Ny  = 4
+mdim = 3
 io = open("prof_$(string(Nx))_$mdim.txt", "w+")
 logger = SimpleLogger(io)
 global_logger(logger)
@@ -22,4 +22,6 @@ Rs = buildRs(cA, H; mindim=mdim, maxdim=mdim)
 @info "Built first Rs"
 cA, Ls, Rs = rightwardSweep(cA, Ls, Rs, H; mindim=mdim, maxdim=mdim)
 cA, Ls, Rs = leftwardSweep(cA, Ls, Rs, H; mindim=mdim, maxdim=mdim)
-doSweeps(cA, Ls, Rs, H; mindim=mdim, maxdim=mdim)
+Profile.init(n=10_000_000)
+@profile doSweeps(cA, Ls, Rs, H; mindim=mdim, maxdim=mdim)
+statprofilehtml()

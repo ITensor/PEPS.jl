@@ -1324,21 +1324,22 @@ function leftwardSweep(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environment
     return A, Ls, Rs
 end
 
-function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; mindim::Int=1, maxdim::Int=1, simple_update_cutoff::Int=4, sweep_start::Int=1, sweep_count::Int=10, cutoff::Float64=0., env_maxdim=2maxdim, do_mag::Bool=false, prefix="$(Nx)_$(maxdim)_mag")
+function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; mindim::Int=1, maxdim::Int=1, simple_update_cutoff::Int=4, sweep_start::Int=1, sweep_count::Int=10, cutoff::Float64=0., env_maxdim=2maxdim, do_mag::Bool=false, prefix="$(Nx)_$(maxdim)_mag", max_gauge_iter::Int=10)
     for sweep in sweep_start:sweep_count
         if iseven(sweep)
-            println("SWEEP RIGHT $sweep")
-            A, Ls, Rs = rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim)
+            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter)
+            println("SWEEP RIGHT $sweep, time $this_time")
         else
-            println("SWEEP LEFT $sweep")
-            A, Ls, Rs = leftwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim)
+            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed leftwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter)
+            println("SWEEP LEFT $sweep, time $this_time")
         end
+        flush(stdout)
         if sweep == simple_update_cutoff - 1
             for col in reverse(2:Nx)
-                A = gaugeColumn(A, col, :left; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                A = gaugeColumn(A, col, :left; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter)
             end
-            Ls = buildLs(A, H; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
-            Rs = buildRs(A, H; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+            Ls = buildLs(A, H; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+            Rs = buildRs(A, H; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
         end
         if do_mag
             A_ = copy(A)
@@ -1356,13 +1357,13 @@ function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H
                     z_mag[:, col] = measureZmag(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
                     v_mag[:, col] = measureSmagVertical(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
                     if col > 1 
-                        A_  = gaugeColumn(A_, col, :left; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999)
+                        A_  = gaugeColumn(A_, col, :left; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
                         if col < Nx
-                            R_s[col] = buildNextEnvironment(A_, R_s[col+1], H, prev_cmb, next_cmb, :right, col; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                            R_s[col] = buildNextEnvironment(A_, R_s[col+1], H, prev_cmb, next_cmb, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                             prev_cmb = deepcopy(next_cmb)
                         else
                             right_H_terms = getDirectional(H[Nx-1], Horizontal)
-                            R_s[col] = buildEdgeEnvironment(A_, H, right_H_terms, prev_cmb, :right, col; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                            R_s[col] = buildEdgeEnvironment(A_, H, right_H_terms, prev_cmb, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                         end
                     end
                 end
@@ -1375,13 +1376,13 @@ function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H
                     z_mag[:, col] = measureZmag(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
                     v_mag[:, col] = measureSmagVertical(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
                     if col < Nx 
-                        A_  = gaugeColumn(A_, col, :right; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999)
+                        A_  = gaugeColumn(A_, col, :right; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
                         if col > 1
-                            L_s[col] = buildNextEnvironment(A_, L_s[col-1], H, prev_cmb, next_cmb, :left, col; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                            L_s[col] = buildNextEnvironment(A_, L_s[col-1], H, prev_cmb, next_cmb, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                             prev_cmb = deepcopy(next_cmb)
                         else
                             left_H_terms = getDirectional(H[1], Horizontal)
-                            L_s[col] = buildEdgeEnvironment(A_, H, left_H_terms, prev_cmb, :left, col; mindim=1, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                            L_s[col] = buildEdgeEnvironment(A_, H, left_H_terms, prev_cmb, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                         end
                     end
                 end
