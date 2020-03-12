@@ -28,7 +28,7 @@ end
 
 function gaugeQR(A::PEPS, col::Int, side::Symbol; kwargs...)
     overlap_cutoff::Real = get(kwargs, :overlap_cutoff, 1e-4)
-    maxiter::Int         = get(kwargs, :maxiter, 100)
+    max_gauge_iter::Int  = get(kwargs, :max_gauge_iter, 100)
     Ny, Nx = size(A)
     is_gpu = !(data(store(A[1,1])) isa Array)
     prev_col_inds = Vector{Index}(undef, Ny)
@@ -119,7 +119,7 @@ function gaugeQR(A::PEPS, col::Int, side::Symbol; kwargs...)
         end
         ratio > overlap_cutoff && break
         iter += 1
-        iter > maxiter && break
+        iter > max_gauge_iter && break
         if (iter > 10 && best_overlap < 0.5) || (iter > 20 && mod(iter, 20) == 0)
             Q_, QR_inds_, next_col_inds_ = initQs(A, col, next_col; kwargs...)
             for row in 1:Ny
