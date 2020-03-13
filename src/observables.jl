@@ -70,7 +70,6 @@ function measureSmagVertical(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Envir
         push!(SVs, Operator([row=>col, row+1=>col], [0.5*M, P], s, Vertical))
         push!(SVs, Operator([row=>col, row+1=>col], [Z, Z], s, Vertical))
     end
-    #A = intraColumnGauge(A, col; kwargs...)
     tR = col == Nx ? dummyEnv : Rs[col+1]
     tL = col == 1  ? dummyEnv : Ls[col-1]
     AI = makeAncillaryIs(A, tL, tR, col)
@@ -85,7 +84,7 @@ function measureSmagVertical(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Envir
     return measuredSV
 end
 
-function measureSmagHorizontal(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}; kwargs...)
+function measureSmagHorizontal(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, col; kwargs...)
     s = Index(2, "Site,SpinInd")
     Z = ITensor(s, s')
     Z[s(1), s'(1)] = 0.5
@@ -101,26 +100,23 @@ function measureSmagHorizontal(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Env
     Nx, Ny = size(A)
     dummyI     = MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
     dummyEnv   = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
-    measuredSH = zeros(Nx, Ny)
-    for col in 1:Nx-1
-        SHs = Operator[]
-        for row in 1:Ny
-            push!(SHs, Operator([row=>col, row=>col+1], [0.5*P, M], s, Horizontal))
-            push!(SHs, Operator([row=>col, row=>col+1], [0.5*M, P], s, Horizontal))
-            push!(SHs, Operator([row=>col, row=>col+1], [Z, Z], s, Horizontal))
-        end
-        #A = intraColumnGauge(A, col; kwargs...)
-        tR = Rs[col+1]
-        tL = col == 1      ? dummyEnv : Ls[col-1]
-        AI = makeAncillaryIs(A, tL, tR, col)
-        AS = makeAncillarySide(A, tR, tL, SHs, col, :right)
-        hTs = connectRightTerms(A, tL, tR, (above=AI,), (above=AS,), SHs, 1, col, A[1, col])
-        N  = buildN(A, tL, tR, (above=AI,), 1, col, A[1, col])
-        nrm = scalar(N * dag(A[1, col]'))
-        for (hi, hT) in enumerate(hTs)
-            row = SHs[hi].sites[1][1]
-            measuredSH[row, col] += scalar(hT * dag(A[1, col]'))/nrm
-        end
+    measuredSH = zeros(Ny)
+    SHs = Operator[]
+    for row in 1:Ny
+        push!(SHs, Operator([row=>col, row=>col+1], [0.5*P, M], s, Horizontal))
+        push!(SHs, Operator([row=>col, row=>col+1], [0.5*M, P], s, Horizontal))
+        push!(SHs, Operator([row=>col, row=>col+1], [Z, Z], s, Horizontal))
+    end
+    tR = Rs[col+1]
+    tL = col == 1      ? dummyEnv : Ls[col-1]
+    AI = makeAncillaryIs(A, tL, tR, col)
+    AS = makeAncillarySide(A, tR, tL, SHs, col, :right)
+    hTs = connectRightTerms(A, tL, tR, (above=AI,), (above=AS,), SHs, 1, col, A[1, col])
+    N  = buildN(A, tL, tR, (above=AI,), 1, col, A[1, col])
+    nrm = scalar(N * dag(A[1, col]'))
+    for (hi, hT) in enumerate(hTs)
+        row = SHs[hi].sites[1][1]
+        measuredSH[row] += scalar(hT * dag(A[1, col]'))/nrm
     end
     return measuredSH
 end

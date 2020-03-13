@@ -99,6 +99,7 @@ include("environments.jl")
 include("ancillaries.jl")
 include("gauge.jl")
 include("observables.jl")
+include("hamiltonians.jl")
 
 function randomCuPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
     lattice = squareLattice(Nx,Ny,yperiodic=false)
@@ -171,140 +172,6 @@ function spinI(s::Index; is_gpu::Bool=false)::ITensor
     I           = is_gpu ? cuITensor( I_data, IndexSet(s, s') ) : ITensor(vec(I_data), IndexSet(s, s'))
     return I
 end
-
-function makeH_XXZ(Nx::Int, Ny::Int, J::Real; pinning::Bool=false)
-    s = Index(2, "Site,SpinInd")
-    Z = ITensor(s, s')
-    Z[s(1), s'(1)] = 0.5
-    Z[s(2), s'(2)] = -0.5
-    P = ITensor(s, s')
-    M = ITensor(s, s')
-    P[s(1), s'(2)] = 1.0
-    M[s(2), s'(1)] = 1.0
-    H = Matrix{Vector{Operator}}(undef, Ny, Nx)
-    @inbounds for col in 1:Nx, row in 1:Ny
-        H[row, col] = Vector{Operator}()
-        if row < Ny
-            op_a  = 0.5 * P
-            op_b  = copy(M)
-            sites = [row=>col, row+1=>col]
-            push!(H[row, col], Operator(sites, [op_a; op_b], s, Vertical))
-
-            op_a  = 0.5 * M
-            op_b  = copy(P)
-            sites = [row=>col, row+1=>col]
-            push!(H[row, col], Operator(sites, [op_a; op_b], s, Vertical))
-
-            if J != 0.0
-                op_a  = J * Z
-                op_b  = copy(Z)
-                sites = [row=>col, row+1=>col]
-                push!(H[row, col], Operator(sites, [op_a; op_b], s, Vertical))
-            end
-        end
-        if col < Nx
-            op_a  = 0.5 * P
-            op_b  = copy(M)
-            sites = [row=>col, row=>col+1]
-            push!(H[row, col], Operator(sites, [op_a; op_b], s, Horizontal))
-
-            op_a  = 0.5 * M
-            op_b  = copy(P)
-            sites = [row=>col, row=>col+1]
-            push!(H[row, col], Operator(sites, [op_a; op_b], s, Horizontal))
-
-            if J != 0.0
-                op_a  = J * Z
-                op_b  = copy(Z)
-                sites = [row=>col, row=>col+1]
-                push!(H[row, col], Operator(sites, [op_a; op_b], s, Horizontal))
-            end
-        end
-    end
-    # pinning fields
-    J_ = 1.;
-    @inbounds for row in 1:Ny
-        op = isodd(row-1) ? (J_/2.0) * Z : (-J_/2.0) * Z   
-        push!(H[row, 1], Operator([row=>1], [op], s, Field))    
-        op = isodd(row-1) ? (-J_/2.0) * Z : (J_/2.0) * Z   
-        push!(H[row, Nx], Operator([row=>Nx], [op], s, Field))    
-    end
-    @inbounds for col in 2:Nx-1
-        op = isodd(col-1) ? (-J_/2.0) * Z : (J_/2.0) * Z   
-        push!(H[Ny, col], Operator([Ny=>col], [op], s, Field))    
-        op = isodd(col-1) ? (J_/2.0) * Z : (-J_/2.0) * Z   
-        push!(H[1, col], Operator([1=>col], [op], s, Field))    
-    end
-    return H
-end
-
-function makeCuH_XXZ(Nx::Int, Ny::Int, J::Real; pinning::Bool=false)
-    s = Index(2, "Site,SpinInd")
-    Z = ITensor(s, s')
-    Z[s(1), s'(1)] = 0.5
-    Z[s(2), s'(2)] = -0.5
-    #Ident = spinI(s)
-    P = ITensor(s, s')
-    M = ITensor(s, s')
-    P[s(1), s'(2)] = 1.0
-    M[s(2), s'(1)] = 1.0
-    H = Matrix{Vector{Operator}}(undef, Ny, Nx)
-    @inbounds for col in 1:Nx, row in 1:Ny
-        H[row, col] = Vector{Operator}()
-        if row < Ny
-            op_a  = 0.5 * P
-            op_b  = copy(M)
-            sites = [row=>col, row+1=>col]
-            push!(H[row, col], Operator(sites, [cuITensor(op_a); cuITensor(op_b)], s, Vertical))
-
-            op_a  = 0.5 * M
-            op_b  = copy(P)
-            sites = [row=>col, row+1=>col]
-            push!(H[row, col], Operator(sites, [cuITensor(op_a); cuITensor(op_b)], s, Vertical))
-
-            if J != 0.0
-                op_a  = J * Z
-                op_b  = copy(Z)
-                sites = [row=>col, row+1=>col]
-                push!(H[row, col], Operator(sites, [cuITensor(op_a); cuITensor(op_b)], s, Vertical))
-            end
-        end
-        if col < Nx
-            op_a  = 0.5 * P
-            op_b  = copy(M)
-            sites = [row=>col, row=>col+1]
-            push!(H[row, col], Operator(sites, [cuITensor(op_a); cuITensor(op_b)], s, Horizontal))
-
-            op_a  = 0.5 * M
-            op_b  = copy(P)
-            sites = [row=>col, row=>col+1]
-            push!(H[row, col], Operator(sites, [cuITensor(op_a); cuITensor(op_b)], s, Horizontal))
-
-            if J != 0.0
-                op_a  = J * Z
-                op_b  = copy(Z)
-                sites = [row=>col, row=>col+1]
-                push!(H[row, col], Operator(sites, [cuITensor(op_a); cuITensor(op_b)], s, Horizontal))
-            end
-        end
-    end
-    # pinning fields
-    J_ = 1.
-    @inbounds for row in 1:Ny
-        op = isodd(row-1) ? (J_/2.0) * Z : (-J_/2.0) * Z   
-        push!(H[row, 1], Operator([row=>1], [cuITensor(op)], s, Field))    
-        op = isodd(row-1) ? (-J_/2.0) * Z : (J_/2.0) * Z   
-        push!(H[row, Nx], Operator([row=>Nx], [cuITensor(op)], s, Field))    
-    end
-    @inbounds for col in 2:Nx-1
-        op = isodd(col-1) ? (-J_/2.0) * Z : (J_/2.0) * Z   
-        push!(H[Ny, col], Operator([Ny=>col], [cuITensor(op)], s, Field))    
-        op = isodd(col-1) ? (J_/2.0) * Z : (-J_/2.0) * Z   
-        push!(H[1, col], Operator([1=>col], [cuITensor(op)], s, Field))    
-    end
-    return H
-end
-
 
 function combine(Aorig::ITensor, Anext::ITensor, tags::String)::ITensor
     ci        = commonindex(Aorig, Anext)
@@ -1346,6 +1213,7 @@ function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H
             x_mag = zeros(Ny, Nx)
             z_mag = zeros(Ny, Nx)
             v_mag = zeros(Ny, Nx)
+            h_mag = zeros(Ny, Nx)
             prev_cmb = Vector{ITensor}(undef, Ny)
             next_cmb = Vector{ITensor}(undef, Ny)
             if iseven(sweep)
@@ -1356,6 +1224,9 @@ function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H
                     x_mag[:, col] = measureXmag(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
                     z_mag[:, col] = measureZmag(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
                     v_mag[:, col] = measureSmagVertical(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+                    if col < Nx
+                        h_mag[:, col] = measureSmagHorizontal(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+                    end
                     if col > 1 
                         A_  = gaugeColumn(A_, col, :left; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
                         if col < Nx
@@ -1375,6 +1246,9 @@ function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H
                     x_mag[:, col] = measureXmag(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
                     z_mag[:, col] = measureZmag(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
                     v_mag[:, col] = measureSmagVertical(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+                    if col < Nx
+                        h_mag[:, col] = measureSmagHorizontal(A_, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+                    end
                     if col < Nx 
                         A_  = gaugeColumn(A_, col, :right; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
                         if col > 1
@@ -1390,6 +1264,7 @@ function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H
             writedlm(prefix*"_$(sweep)_x", x_mag)
             writedlm(prefix*"_$(sweep)_z", z_mag)
             writedlm(prefix*"_$(sweep)_v", v_mag)
+            writedlm(prefix*"_$(sweep)_h", h_mag)
         end
     end
     return A
