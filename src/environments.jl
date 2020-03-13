@@ -117,7 +117,7 @@ end
 
 function buildNewVerticals(A::PEPS, previous_combiners::Vector, next_combiners::Vector{ITensor}, up_combiners::Vector{ITensor}, H, col::Int)::MPO
     Ny, Nx = size(A)
-    is_cu              = is_gpu(A) 
+    is_cu               = is_gpu(A) 
     col_site_inds       = [findindex(A[row, col], "Site") for row in 1:Ny]
     ops                 = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
     vertical_row_a      = H.sites[1][1]
@@ -127,7 +127,6 @@ function buildNewVerticals(A::PEPS, previous_combiners::Vector, next_combiners::
     ops[vertical_row_b] = replaceindex!(copy(H.ops[2]), H.site_ind, col_site_inds[vertical_row_b])
     ops[vertical_row_b] = replaceindex!(ops[vertical_row_b], H.site_ind', col_site_inds[vertical_row_b]') 
     internal_cmb_u      = is_cu ? vcat(cuITensor(1.0), up_combiners, cuITensor(1.0)) : vcat(ITensor(1.0), up_combiners, ITensor(1.0)) 
-    #AAs                 = [ A[row, col] * ops[row] * prime(dag(A[row, col])) * next_combiners[row] * previous_combiners[row] * internal_cmb_u[row] * internal_cmb_u[row+1] for row in 1:Ny ]
     AAs            = Vector{ITensor}(undef, Ny)
     AAs[1] = A[1, col] * ops[1] * prime(dag(A[1, col])) * next_combiners[1] * up_combiners[1] * previous_combiners[1]
     @inbounds for row in 2:Ny-1
