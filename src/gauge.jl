@@ -13,9 +13,9 @@ function initQs( A::PEPS, col::Int, next_col::Int; kwargs...)
     Q         = MPO(Ny, deepcopy(A[:, col]), 0, Ny+1)
     prev_col  = next_col > col ? col - 1 : col + 1
     A_r_inds  = [commonindex(A[row, col], A[row, next_col]) for row in 1:Ny]
-    QR_inds   = [Index(dim(A_r_inds[row]), "Site,QR,c$col,r$row") for row in 1:Ny]
+    QR_inds   = [Index(ITensors.dim(A_r_inds[row]), "Site,QR,c$col,r$row") for row in 1:Ny]
     A_up_inds = [commonindex(A[row, col], A[row+1, col]) for row in 1:Ny-1]
-    Q_up_inds = [Index(dim(A_up_inds[row]), "Link,u,Qup$row") for row in 1:Ny-1]
+    Q_up_inds = [Index(ITensors.dim(A_up_inds[row]), "Link,u,Qup$row") for row in 1:Ny-1]
     next_col_inds = [commonindex(A[row, col], A[row, next_col]) for row in 1:Ny]
     prev_col_inds = 0 < prev_col < Nx ? [commonindex(A[row, col], A[row, prev_col]) for row in 1:Ny] : Vector{Index}(undef, Ny)
     for row in 1:Ny
@@ -44,7 +44,7 @@ function gaugeQR(A::PEPS, col::Int, side::Symbol; kwargs...)
     best_Q        = MPO(Ny)
     best_R        = MPO(Ny)
     iter          = 1
-    dummy_nexts   = [Index(dim(next_col_inds[row]), "DM,Site,r$row") for row in 1:Ny]
+    dummy_nexts   = [Index(ITensors.dim(next_col_inds[row]), "DM,Site,r$row") for row in 1:Ny]
     cmb_l         = Vector{ITensor}(undef, Ny)
     iter          = 0
     while best_overlap < overlap_cutoff 
@@ -180,12 +180,12 @@ function gaugeColumn( A::PEPS, col::Int, side::Symbol; kwargs...)
         end
         maxdim::Int  = get(kwargs, :maxdim, 1)
         result       = multMPO(R, next_col_As; kwargs...)
-        true_QR_inds = [Index(dim(QR_inds[row]), "Link,r,r$row" * (side == :left ? ",c$(col-1)" : ",c$col")) for row in 1:Ny]
+        true_QR_inds = [Index(ITensors.dim(QR_inds[row]), "Link,r,r$row" * (side == :left ? ",c$(col-1)" : ",c$col")) for row in 1:Ny]
         for row in 1:Ny
             A[row, col] = Q[row]
         end
         cUs = [commonindex(A[row, col], A[row+1, col]) for row in 1:Ny-1]
-        true_U_inds = [Index(dim(cUs[row]), "Link,u,r$row,c$col") for row in 1:Ny-1]
+        true_U_inds = [Index(ITensors.dim(cUs[row]), "Link,u,r$row,c$col") for row in 1:Ny-1]
         A[:, col] = [replaceindex!(A[row, col], QR_inds[row], true_QR_inds[row]) for row in 1:Ny]
         A[:, col] = vcat([replaceindex!(A[row, col], cUs[row], true_U_inds[row]) for row in 1:Ny-1], A[Ny, col])
         A[:, col] = vcat(A[1, col], [replaceindex!(A[row, col], cUs[row-1], true_U_inds[row-1]) for row in 2:Ny])
@@ -195,7 +195,7 @@ function gaugeColumn( A::PEPS, col::Int, side::Symbol; kwargs...)
         end
         A[:, next_col] = [replaceindex!(A[row, next_col], QR_inds[row], true_QR_inds[row]) for row in 1:Ny]
         cUs            = [commonindex(A[row, next_col], A[row+1, next_col]) for row in 1:Ny-1]
-        true_nU_inds   = [Index(dim(cUs[row]), "Link,u,r$row,c" * string(next_col)) for row in 1:Ny-1]
+        true_nU_inds   = [Index(ITensors.dim(cUs[row]), "Link,u,r$row,c" * string(next_col)) for row in 1:Ny-1]
         A[:, next_col] = vcat([replaceindex!(A[row, next_col], cUs[row], true_nU_inds[row]) for row in 1:Ny-1], A[Ny, next_col])
         A[:, next_col] = vcat(A[1, next_col], [replaceindex!(A[row, next_col], cUs[row-1], true_nU_inds[row-1]) for row in 2:Ny])
         A[:, next_col] = [A[row, next_col] * cmb_r[row] for row in 1:Ny]

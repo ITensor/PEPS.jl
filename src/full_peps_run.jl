@@ -1,6 +1,6 @@
 using Pkg
 Pkg.activate("..")
-using TimerOutputs, Statistics, ArgParse, CUDAnative
+using TimerOutputs, Statistics, ArgParse, CUDAnative, Distributions
 include("peps.jl")
 
 s = ArgParseSettings()
@@ -37,6 +37,28 @@ s = ArgParseSettings()
         help = "Which GPU to use"
         arg_type = Int
         default = 1
+    "--model"
+        help = "Which Hamiltonian to use"
+        arg_type = String
+        default = "XXZ"
+    "--J"
+        help = "J-parameter"
+        arg_type = Float64
+        default = 1.0
+    "--hz"
+        help = "Field in the z parameter, or random # bound"
+        arg_type = Float64
+        default = 0.0
+    "--hx"
+        help = "Field in the x parameter, or random # bound"
+        arg_type = Float64
+        default = 0.0
+    "--random_x"
+        help = "Use random fields in the x direction"
+        action = :store_true
+    "--random_z"
+        help = "Use random fields in the z direction"
+        action = :store_true
 end
 
 # get basic simulation parameters 
@@ -53,7 +75,7 @@ D  = parsed_args["D"]
 parsed_args["device"] != 1 && device!(parsed_args["device"])
 
 # Hamiltonian parameters
-J  = 1.0
+J     = parsed_args["J"] 
 sites = siteinds("S=1/2",Nx*Ny)
 
 # disallow scalar indexing on GPU, which is very slow 
@@ -62,7 +84,29 @@ A = checkerboardPEPS(sites, Nx, Ny, mindim=D)
 # to the user, these appear as normal ITensors, but they have on-device storage
 # Julia can detect this at runtime and appropriately dispatch to CUTENSOR
 cA = cuPEPS(A)
-H  = makeCuH_XXZ(Nx, Ny, J)
+H  = nothing
+if parsed_args["model"] == "XXZ"
+    H  = makeCuH_XXZ(Nx, Ny, J)
+elseif parsed_args["model"] == "Ising"
+    hz = parsed_args["hz"]
+    hx = parsed_args["hx"]
+    random_z = parsed_args["random_z"]
+    random_x = parsed_args["random_x"]
+    if random_x || random_z
+        seed = rand(Int)
+        @show seed
+        Random.seed!(seed)
+    end
+    if random_x
+        dx = Uniform(-hx, hx)
+        hx = rand(dx, Ny, Nx)
+    end
+    if random_z
+        dz = Uniform(-hz, hz)
+        hz = rand(dz, Ny, Nx)
+    end
+    H  = makeCuH_Ising(Nx, Ny, J, hx, hz)
+end
 @info "Built cA and H"
 # run heaviest functions one time to make Julia compile everything
 @info "Built cA and H"
@@ -73,7 +117,6 @@ Rs = Vector{Environments}(undef, Nx)
 @info "Built first Rs"
 
 # actual profiling run
-#prefix = "magvar/$(Nx)_$(env_add)_$(chi)_magvar"
 cA, tS, bytes, gctime, memallocs = @timed doSweeps(cA, Ls, Rs, H; mindim=D, maxdim=D, simple_update_cutoff=parsed_args["simple_update_cutoff"], sweep_count=parsed_args["sweep_count"], cutoff=0.0, env_maxdim=χ, do_mag=parsed_args["do_mag"], prefix=parsed_args["prefix"])
 println("Done sweeping GPU $tS")
 flush(stdout)

@@ -48,7 +48,7 @@ end
 Base.eltype(A::PEPS) = eltype(A.A_[1,1])
 
 function cudelt(left::Index, right::Index)
-    d_data   = CuArrays.zeros(Float64, dim(left), dim(right))
+    d_data   = CuArrays.zeros(Float64, ITensors.dim(left), ITensors.dim(right))
     ddi = diagind(d_data, 0)
     d_data[ddi] = 1.0
     delt = cuITensor(vec(d_data), left, right)
@@ -56,7 +56,7 @@ function cudelt(left::Index, right::Index)
 end
 
 function mydelt(left::Index, right::Index)
-    d_data   = zeros(Float64, dim(left), dim(right))
+    d_data   = zeros(Float64, ITensors.dim(left), ITensors.dim(right))
     ddi = diagind(d_data, 0)
     d_data[ddi] = ones(Float64, length(ddi))
     delt = ITensor(vec(d_data), left, right)
@@ -166,9 +166,9 @@ end
 getDirectional(ops::Vector{Operator}, dir::Op_Type) = collect(filter(x->x.dir==dir, ops))
 
 function spinI(s::Index; is_gpu::Bool=false)::ITensor
-    I_data      = is_gpu ? CuArrays.zeros(Float64, dim(s)*dim(s)) : zeros(Float64, dim(s), dim(s))
-    idi         = diagind(reshape(I_data, dim(s), dim(s)), 0)
-    I_data[idi] = is_gpu ? CuArrays.ones(Float64, dim(s)) : ones(Float64, dim(s))
+    I_data      = is_gpu ? CuArrays.zeros(Float64, ITensors.dim(s)*ITensors.dim(s)) : zeros(Float64, ITensors.dim(s), ITensors.dim(s))
+    idi         = diagind(reshape(I_data, ITensors.dim(s), ITensors.dim(s)), 0)
+    I_data[idi] = is_gpu ? CuArrays.ones(Float64, ITensors.dim(s)) : ones(Float64, ITensors.dim(s))
     I           = is_gpu ? cuITensor( I_data, IndexSet(s, s') ) : ITensor(vec(I_data), IndexSet(s, s'))
     return I
 end
@@ -835,7 +835,7 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
             si_a       = findindex(A[row, col], "Site")
             si_b       = findindex(A[row, next_col], "Site")
             ci         = commonindex(A[row, col], A[row, next_col])
-            min_dim    = dim(ci)
+            min_dim    = ITensors.dim(ci)
             Ua, Sa, Va = svd(A[row, col], si_a, ci; mindim=min_dim, kwargs...)
             Ub, Sb, Vb = svd(A[row, next_col], si_b, ci; mindim=min_dim, kwargs...)
             Hab_hori   = is_cu ? cuITensor() : ITensor()
@@ -846,7 +846,7 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
                 op_a = replaceindex!(op_a, hH.site_ind', hori_col == col ? si_a' : si_b')
                 op_b = replaceindex!(copy(hH.ops[2]), hH.site_ind, hori_col == col ? si_b : si_a)
                 op_b = replaceindex!(op_b, hH.site_ind', hori_col == col ? si_b' : si_a')
-                Hab_hori = dim(Hab_hori) < 2 ? op_a * op_b : Hab_hori + op_a * op_b
+                Hab_hori = ITensors.dim(Hab_hori) < 2 ? op_a * op_b : Hab_hori + op_a * op_b
             end
             cmb, ci   = combiner(findinds(Hab_hori, ("",0)), tags="hab,Site")
             Hab_hori *= cmb
@@ -866,7 +866,7 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
             si_a       = findindex(A[row, col], "Site")
             si_b       = findindex(A[row+1, col], "Site")
             ci         = commonindex(A[row, col], A[row+1, col])
-            min_dim    = dim(ci)
+            min_dim    = ITensors.dim(ci)
             Ua, Sa, Va = svd(A[row, col], si_a, ci; mindim=min_dim, kwargs...)
             Ub, Sb, Vb = svd(A[row+1, col], si_b, ci; mindim=min_dim, kwargs...)
             Hab_vert   = is_cu ? cuITensor() : ITensor()
@@ -877,7 +877,7 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
                 op_a = replaceindex!(op_a, vH.site_ind', si_a')
                 op_b = replaceindex!(copy(vH.ops[2]), vH.site_ind, si_b)
                 op_b = replaceindex!(op_b, vH.site_ind', si_b')
-                Hab_vert = dim(Hab_vert) < 2 ? op_a * op_b : Hab_vert + op_a * op_b
+                Hab_vert = ITensors.dim(Hab_vert) < 2 ? op_a * op_b : Hab_vert + op_a * op_b
             end
             cmb, ci   = combiner(findinds(Hab_vert, ("",0)), tags="hab,Site")
             Hab_vert *= cmb
@@ -983,7 +983,7 @@ struct ITensorMap
   col::Int
 end
 Base.eltype(M::ITensorMap)  = eltype(M.A)
-Base.size(M::ITensorMap)    = dim(M.A[M.row, M.col])
+Base.size(M::ITensorMap)    = ITensors.dim(M.A[M.row, M.col])
 function (M::ITensorMap)(v::ITensor) 
     Hs, N  = buildLocalH(M.A, M.L, M.R, M.AncEnvs, M.H, M.row, M.col, v)
     localH = sum(Hs)
@@ -1007,7 +1007,7 @@ function optimizeLocalH(A::PEPS, L::Environments, R::Environments, AncEnvs, H, r
     @info "Initial energy at row $row col $col : $(initial_E/(initial_N*Nx*Ny)) and norm : $initial_N"
     @debug "\tBeginning davidson for col $col row $row"
     mapper   = ITensorMap(A, H, L, R, AncEnvs, row, col)
-    λ, new_A = davidson(mapper, A[row, col]; miniter=2, kwargs...)
+    λ, new_A = davidson(mapper, A[row, col]; maxiter=1, kwargs...)
     new_E    = λ #real(scalar(collect(new_A * localH * dag(new_A)')))
     #new_A    = A[row,col]
     #new_E    = initial_E

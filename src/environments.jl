@@ -22,7 +22,7 @@ function buildEdgeEnvironment(A::PEPS, H, left_H_terms, next_combiners, side::Sy
     Hs             = MPS[MPS(Ny, tensors(H_term), 0, Ny+1) for H_term in vcat(vHs, fHs)]
     @inbounds for row in 1:Ny-1
         ci = linkindex(I_mps, row)
-        ni = Index(dim(ci), "u,Link,c$col,r$row")
+        ni = Index(ITensors.dim(ci), "u,Link,c$col,r$row")
         replaceindex!(I_mps[row], ci, ni) 
         replaceindex!(I_mps[row+1], ci, ni)
     end
@@ -54,7 +54,7 @@ function buildNextEnvironment(A::PEPS, prev_Env::Environments, H, previous_combi
     copyto!(next_combiners, working_combiner)
     @inbounds for row in 1:Ny-1
         ci = linkindex(I_mpo, row)
-        ni = Index(dim(ci), "u,Link,c$col,r$row")
+        ni = Index(ITensors.dim(ci), "u,Link,c$col,r$row")
         replaceindex!(I_mpo[row], ci, ni) 
         replaceindex!(I_mpo[row+1], ci, ni)
     end
@@ -256,7 +256,7 @@ function connectDanglingBonds(A::PEPS, next_combiners::Vector{ITensor}, up_combi
     else
         @inbounds for row in 1:Ny-1
             ci = linkIndex(completed_H, row)
-            ni = Index(dim(ci), "u,Link,c$col,r$row")
+            ni = Index(ITensors.dim(ci), "u,Link,c$col,r$row")
             replaceIndex!(completed_H[row],   ci, ni)
             replaceIndex!(completed_H[row+1], ci, ni)
         end
