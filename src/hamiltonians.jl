@@ -5,8 +5,8 @@ function makeH_Ising(Nx::Int, Ny::Int, J::Real, hx, hz; pinning::Bool=false)
     Z[s(1), s'(1)] = 0.5
     Z[s(2), s'(2)] = -0.5
     X = ITensor(s, s')
-    X[s(1), s'(2)] = -1.0 
-    X[s(2), s'(1)] = -0.5
+    X[s(1), s'(2)] = 0.5
+    X[s(2), s'(1)] = 0.5
 
     hxs = hx isa Matrix ? hx : fill(hx, Ny, Nx)
     hzs = hz isa Matrix ? hz : fill(hz, Ny, Nx)
@@ -16,7 +16,7 @@ function makeH_Ising(Nx::Int, Ny::Int, J::Real, hx, hz; pinning::Bool=false)
         H[row, col] = Vector{Operator}()
         if row < Ny
             if J != 0.0
-                op_a  = J * Z
+                op_a  = J * copy(Z)
                 op_b  = copy(Z)
                 sites = [row=>col, row+1=>col]
                 push!(H[row, col], Operator(sites, [op_a; op_b], s, Vertical))
@@ -30,11 +30,11 @@ function makeH_Ising(Nx::Int, Ny::Int, J::Real, hx, hz; pinning::Bool=false)
                 push!(H[row, col], Operator(sites, [op_a; op_b], s, Horizontal))
             end
         end
-        if hxs[ row, col ] != 0.0
-            push!(H[row, col], Operator([row=>row], [hxs[row,col]*copy(X)], s, Field))    
-        end
         if hzs[ row, col ] != 0.0
             push!(H[row, col], Operator([row=>row], [hzs[row,col]*copy(Z)], s, Field))    
+        end
+        if hxs[ row, col ] != 0.0
+            push!(H[row, col], Operator([row=>row], [hxs[row,col]*copy(X)], s, Field))    
         end
     end
     return H
@@ -46,8 +46,8 @@ function makeCuH_Ising(Nx::Int, Ny::Int, J::Real, hx, hz; pinning::Bool=false)
     Z[s(1), s'(1)] = 0.5
     Z[s(2), s'(2)] = -0.5
     X = ITensor(s, s')
-    X[s(1), s'(2)] = -1.0 
-    X[s(2), s'(1)] = -0.5
+    X[s(1), s'(2)] = 0.5 
+    X[s(2), s'(1)] = 0.5
 
     hxs = hx isa Matrix ? hx : fill(hx, Ny, Nx)
     hzs = hz isa Matrix ? hz : fill(hz, Ny, Nx)
@@ -57,7 +57,7 @@ function makeCuH_Ising(Nx::Int, Ny::Int, J::Real, hx, hz; pinning::Bool=false)
         H[row, col] = Vector{Operator}()
         if row < Ny
             if J != 0.0
-                op_a  = J * Z
+                op_a  = -J * Z
                 op_b  = copy(Z)
                 sites = [row=>col, row+1=>col]
                 push!(H[row, col], Operator(sites, [cuITensor(op_a); cuITensor(op_b)], s, Vertical))
@@ -65,17 +65,17 @@ function makeCuH_Ising(Nx::Int, Ny::Int, J::Real, hx, hz; pinning::Bool=false)
         end
         if col < Nx
             if J != 0.0
-                op_a  = J * Z
+                op_a  = -J * Z
                 op_b  = copy(Z)
                 sites = [row=>col, row=>col+1]
                 push!(H[row, col], Operator(sites, [cuITensor(op_a); cuITensor(op_b)], s, Horizontal))
             end
         end
-        if hxs[ row, col ] != 0.0
-            push!(H[row, col], Operator([row=>row], [cuITensor(hxs[row,col]*copy(X))], s, Field))    
-        end
         if hzs[ row, col ] != 0.0
-            push!(H[row, col], Operator([row=>row], [cuITensor(hzs[row,col]*copy(Z))], s, Field))    
+            push!(H[row, col], Operator([row=>col], [cuITensor(hzs[row,col]*copy(Z))], s, Field))    
+        end
+        if hxs[ row, col ] != 0.0
+            push!(H[row, col], Operator([row=>col], [cuITensor(hxs[row,col]*copy(X))], s, Field))    
         end
     end
     return H
