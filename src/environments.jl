@@ -16,9 +16,18 @@ function buildEdgeEnvironment(A::PEPS, H, left_H_terms, next_combiners, side::Sy
     copyto!(next_combiners, fake_next_combiners)
     field_H_terms  = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms   = getDirectional(vcat(H[:, col]...), Vertical)
-    vHs            = [buildNewVerticals(A, fake_prev_combiners, fake_next_combiners, up_combiners, vert_H_terms[vert_op], col) for vert_op in 1:length(vert_H_terms)]
-    @debug "Built new Vs"
-    fHs            = [buildNewFields(A, fake_prev_combiners, fake_next_combiners, up_combiners, field_H_terms[field_op], col) for field_op in 1:length(field_H_terms)]
+    #vHs            = [buildNewVerticals(A, fake_prev_combiners, fake_next_combiners, up_combiners, vert_H_terms[vert_op], col) for vert_op in 1:length(vert_H_terms)]
+    vHs = Vector{MPO}(undef, length(vert_H_terms))
+    fHs = Vector{MPO}(undef, length(field_H_terms))
+    Threads.@threads for vv in 1:length(vert_H_terms)
+        Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
+        vHs[vv] = buildNewVerticals(A, fake_prev_combiners, fake_next_combiners, up_combiners, vert_H_terms[vv], col)
+    end
+    #fHs            = [buildNewFields(A, fake_prev_combiners, fake_next_combiners, up_combiners, field_H_terms[field_op], col) for field_op in 1:length(field_H_terms)]
+    Threads.@threads for ff in 1:length(field_H_terms)
+        Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
+        fHs[ff] = buildNewFields(A, fake_prev_combiners, fake_next_combiners, up_combiners, field_H_terms[ff], col)
+    end
     Hs             = MPS[MPS(Ny, tensors(H_term), 0, Ny+1) for H_term in vcat(vHs, fHs)]
     @inbounds for row in 1:Ny-1
         ci = linkindex(I_mps, row)
@@ -35,8 +44,8 @@ function buildEdgeEnvironment(A::PEPS, H, left_H_terms, next_combiners, side::Sy
     side_H_terms = getDirectional(vcat(side_H...), Horizontal)
     @debug "Trying to alloc $(Ny*length(side_H_terms))"
     in_progress  = Matrix{ITensor}(undef, Ny, length(side_H_terms))
-    @inbounds for side_term in 1:length(side_H_terms)
-        @debug "Generating edge bonds for term $side_term"
+    Threads.@threads for side_term in 1:length(side_H_terms)
+        Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
         in_progress[1:Ny, side_term] = generateEdgeDanglingBonds(A, up_combiners, side_H_terms[side_term], side, col)
     end
     @debug "Generated edge bonds"
@@ -76,25 +85,38 @@ function buildNextEnvironment(A::PEPS, prev_Env::Environments, H, previous_combi
     final_H       = deepcopy(new_H)
     new_H_mps     = Vector{MPS}(undef, H_term_count)
     new_H_mps[1]  = deepcopy(new_H)
+    vHs = Vector{MPO}(undef, length(vert_H_terms))
+    fHs = Vector{MPO}(undef, length(field_H_terms))
     @timeit "build new verts" begin
-        vHs = [buildNewVerticals(A, previous_combiners, next_combiners, up_combiners, vert_H_terms[vert_op], col) for vert_op in 1:length(vert_H_terms)]
+        #vHs = [buildNewVerticals(A, previous_combiners, next_combiners, up_combiners, vert_H_terms[vert_op], col) for vert_op in 1:length(vert_H_terms)]
+        Threads.@threads for vv in 1:length(vert_H_terms)
+            Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
+            vHs[vv] = buildNewVerticals(A, previous_combiners, next_combiners, up_combiners, vert_H_terms[vv], col)
+            new_H_mps[1+vv] = applyMPO(vHs[vv], prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
+        end
     end
-    @debug "Built new Vs"
     @timeit "build new fields" begin
-        fHs = [buildNewFields(A, previous_combiners, next_combiners, up_combiners, field_H_terms[field_op], col) for field_op in 1:length(field_H_terms)]
-    end
-    @timeit "build new H array" begin
-        for (vv, vH) in enumerate(vHs)
-            new_H_mps[1+vv] = applyMPO(vH, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
-        end
-        for (ff, fH) in enumerate(fHs)
-            new_H_mps[1+length(vHs)+ff] = applyMPO(fH, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
+        Threads.@threads for ff in 1:length(field_H_terms)
+            Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
+            fHs[ff] = buildNewFields(A, previous_combiners, next_combiners, up_combiners, field_H_terms[ff], col)
+            new_H_mps[1+length(vHs)+ff] = applyMPO(fHs[ff], prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
         end
     end
+    #=@timeit "build new H array" begin
+        for vv in 1:length(vHs)
+            #Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
+            new_H_mps[1+vv] = applyMPO(vHs[vv], prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
+        end
+        for ff in 1:length(fHs)
+            #Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
+            new_H_mps[1+length(vHs)+ff] = applyMPO(fHs[ff], prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
+        end
+    end=#
     connect_H    = side == :left ? side_H_terms : hori_H_terms
     @timeit "connect dangling bonds" begin
-        for (cc, cH) in enumerate(connect_H)
-            new_H = connectDanglingBonds(A, next_combiners, up_combiners, cH, prev_Env.InProgress[:, cc], side, -1, col; kwargs...)
+        Threads.@threads for cc in 1:length(connect_H)
+            Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
+            new_H = connectDanglingBonds(A, next_combiners, up_combiners, connect_H[cc], prev_Env.InProgress[:, cc], side, -1, col; kwargs...)
             new_H_mps[length(vert_H_terms) + length(field_H_terms) + 1 + cc] = MPS(Ny, new_H, 0, Ny+1)
         end
     end
@@ -116,7 +138,7 @@ function buildNextEnvironment(A::PEPS, prev_Env::Environments, H, previous_combi
 end
 
 function buildNewVerticals(A::PEPS, previous_combiners::Vector, next_combiners::Vector{ITensor}, up_combiners::Vector{ITensor}, H, col::Int)::MPO
-    Ny, Nx = size(A)
+    Ny, Nx              = size(A)
     is_cu               = is_gpu(A) 
     col_site_inds       = [findindex(A[row, col], "Site") for row in 1:Ny]
     ops                 = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 

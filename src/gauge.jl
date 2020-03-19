@@ -51,7 +51,8 @@ function gaugeQR(A::PEPS, col::Int, side::Symbol; kwargs...)
         thisTerm  = Vector{ITensor}(undef, Ny)
         thisfTerm = Vector{ITensor}(undef, Ny)
         @timeit "build envs" begin
-            for row in 1:Ny
+            Threads.@threads for row in 1:Ny
+                Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
                 Ap = dag(deepcopy(A[row, col]))'
                 Ap = setprime(Ap, 0, next_col_inds[row]')
                 Qp = dag(deepcopy(Q[row]))'
@@ -62,7 +63,8 @@ function gaugeQR(A::PEPS, col::Int, side::Symbol; kwargs...)
             Envs = thisTerm
             fF   = cumprod(thisfTerm)
             rF   = reverse(cumprod(reverse(thisfTerm)))
-            for row in 1:Ny
+            Threads.@threads for row in 1:Ny
+                Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
                 if row > 1
                     Envs[row] *= fF[row - 1]
                 end
@@ -72,7 +74,8 @@ function gaugeQR(A::PEPS, col::Int, side::Symbol; kwargs...)
             end
         end
         @timeit "polar decomp" begin
-            for row in 1:Ny
+            Threads.@threads for row in 1:Ny
+                Base.task_local_storage(:CuStream, CUDAdrv.CuStream())
                 if row < Ny
                     Q_ = my_polar(Envs[row], QR_inds[row], commonindex(Q[row], Q[row+1]); kwargs...)
                     Q[row] = deepcopy(noprime(Q_))

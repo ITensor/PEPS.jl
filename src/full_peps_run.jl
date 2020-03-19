@@ -1,6 +1,7 @@
 using Pkg
 Pkg.activate("..")
-using TimerOutputs, Statistics, ArgParse, CUDAnative, Distributions
+using TimerOutputs, Statistics, ArgParse, CUDAnative, CUDAdrv, Distributions
+device!(0, CUDAdrv.CU_CTX_SCHED_YIELD)
 include("peps.jl")
 
 s = ArgParseSettings()

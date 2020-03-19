@@ -1,5 +1,5 @@
 using ITensors, ITensorsGPU
-using CuArrays
+using CuArrays, CUDAdrv
 using Random, Logging, LinearAlgebra, DelimitedFiles
 
 import ITensors: tensors
