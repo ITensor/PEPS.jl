@@ -93,7 +93,7 @@ elseif parsed_args["model"] == "Ising"
     random_z = parsed_args["random_z"]
     random_x = parsed_args["random_x"]
     if random_x || random_z
-        seed = rand(Int)
+        seed = abs(rand(Int))
         @show seed
         Random.seed!(seed)
     end
