@@ -1,4 +1,4 @@
-include("peps.jl")
+include("peps_util.jl")
 
 function reindexA(A::PEPS, new_A::PEPS)
     Ny, Nx   = size(new_A)

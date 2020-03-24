@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate("..")
 using TimerOutputs, Statistics, ArgParse, CUDAnative, Distributions
-include("peps.jl")
+include("peps_util.jl")
 
 s = ArgParseSettings()
 @add_arg_table! s begin
