@@ -419,10 +419,11 @@ end
 function verticalTerms(A::PEPS, L::Environments, R::Environments, AI, AV, H, row::Int, col::Int, ϕ::ITensor)::Vector{ITensor} 
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
-    vTerms = ITensor[]#fill(ITensor(), length(H))
+    vTerms = Vector{ITensor}(undef, length(H))
     AAinds = IndexSet(prime(ϕ))
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
-    @inbounds for opcode in 1:length(H)
+    #@inbounds for opcode in 1:length(H)
+    Threads.@threads for opcode in 1:length(H)
         thisVert = dummy 
         op_row_a = H[opcode].sites[1][1]
         op_row_b = H[opcode].sites[2][1]
@@ -525,7 +526,7 @@ function verticalTerms(A::PEPS, L::Environments, R::Environments, AI, AV, H, row
         @assert hasinds(inds(thisVert), AAinds) "inds of thisVert and AAinds differ!\n$(inds(thisVert))\n$AAinds\n"
         @assert hasinds(AAinds, inds(thisVert)) "inds of thisVert and AAinds differ!\n$(inds(thisVert))\n$AAinds\n"
         if hasinds(AAinds, inds(thisVert)) && hasinds(inds(thisVert), AAinds)
-            push!(vTerms, thisVert)
+            vTerms[opcode] = thisVert
         end
     end
     return vTerms
@@ -985,7 +986,9 @@ end
 Base.eltype(M::ITensorMap)  = eltype(M.A)
 Base.size(M::ITensorMap)    = ITensors.dim(M.A[M.row, M.col])
 function (M::ITensorMap)(v::ITensor) 
-    Hs, N  = buildLocalH(M.A, M.L, M.R, M.AncEnvs, M.H, M.row, M.col, v)
+    @timeit "build H" begin
+        Hs, N  = buildLocalH(M.A, M.L, M.R, M.AncEnvs, M.H, M.row, M.col, v)
+    end
     localH = sum(Hs)
     return noprime(localH)
 end
@@ -1005,9 +1008,10 @@ function optimizeLocalH(A::PEPS, L::Environments, R::Environments, AncEnvs, H, r
     end
     initial_E = real(scalar(collect(deepcopy(localH) * dag(A[row, col])')))
     @info "Initial energy at row $row col $col : $(initial_E/(initial_N*Nx*Ny)) and norm : $initial_N"
-    @debug "\tBeginning davidson for col $col row $row"
     mapper   = ITensorMap(A, H, L, R, AncEnvs, row, col)
-    λ, new_A = davidson(mapper, A[row, col]; maxiter=1, kwargs...)
+    @timeit "davidson" begin
+        λ, new_A = davidson(mapper, A[row, col]; maxiter=1, kwargs...)
+    end
     new_E    = λ #real(scalar(collect(new_A * localH * dag(new_A)')))
     #new_A    = A[row,col]
     #new_E    = initial_E
@@ -1070,24 +1074,26 @@ end
 
 function sweepColumn(A::PEPS, L::Environments, R::Environments, H, col::Int; kwargs...)
     Ny, Nx = size(A)
-    @debug "Beginning intraColumnGauge for col $col" 
-    A = intraColumnGauge(A, col; kwargs...)
-    if col == div(Nx,2)
+    @timeit "intraColumnGauge" begin
+        A = intraColumnGauge(A, col; kwargs...)
+    end
+    #=if col == div(Nx,2)
         L_s = buildLs(A, H; kwargs...)
         R_s = buildRs(A, H; kwargs...)
         EAncEnvs = buildAncs(A, L_s[col - 1], R_s[col + 1], H, col)
         N, E = measureEnergy(A, L_s[col - 1], R_s[col + 1], EAncEnvs, H, 1, col)
         println("Energy at MID: ", E/(Nx*Ny))
         println("Nx: ", Nx)
+    end=#
+    @timeit "buildAncs" begin
+        AncEnvs = buildAncs(A, L, R, H, col)
     end
-    @debug "Beginning buildAncs for col $col" 
-    AncEnvs = buildAncs(A, L, R, H, col)
     @inbounds for row in 1:Ny
         if row > 1
-            @debug "Beginning updateAncs for col $col" 
-            AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+            @timeit "updateAncs" begin
+                AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+            end
         end
-        @debug "Beginning optimizing H for col $col" 
         A, AncEnvs = optimizeLocalH(A, L, R, AncEnvs, H, row, col; kwargs...)
     end
     return A

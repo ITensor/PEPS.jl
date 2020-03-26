@@ -16,9 +16,12 @@ function buildEdgeEnvironment(A::PEPS, H, left_H_terms, next_combiners, side::Sy
     copyto!(next_combiners, fake_next_combiners)
     field_H_terms  = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms   = getDirectional(vcat(H[:, col]...), Vertical)
-    vHs            = [buildNewVerticals(A, fake_prev_combiners, fake_next_combiners, up_combiners, vert_H_terms[vert_op], col) for vert_op in 1:length(vert_H_terms)]
-    @debug "Built new Vs"
-    fHs            = [buildNewFields(A, fake_prev_combiners, fake_next_combiners, up_combiners, field_H_terms[field_op], col) for field_op in 1:length(field_H_terms)]
+    @timeit "buildNewVerticals" begin
+        vHs            = [buildNewVerticals(A, fake_prev_combiners, fake_next_combiners, up_combiners, vert_H_terms[vert_op], col) for vert_op in 1:length(vert_H_terms)]
+    end
+    @timeit "buildNewFields" begin
+        fHs            = [buildNewFields(A, fake_prev_combiners, fake_next_combiners, up_combiners, field_H_terms[field_op], col) for field_op in 1:length(field_H_terms)]
+    end
     Hs             = MPS[MPS(Ny, tensors(H_term), 0, Ny+1) for H_term in vcat(vHs, fHs)]
     @inbounds for row in 1:Ny-1
         ci = linkindex(I_mps, row)
@@ -29,11 +32,11 @@ function buildEdgeEnvironment(A::PEPS, H, left_H_terms, next_combiners, side::Sy
     maxdim::Int     = get(kwargs, :maxdim, 1)
     cutoff::Float64 = get(kwargs, :cutoff, 0.0)
     env_maxdim::Int = get(kwargs, :env_maxdim, maxdim)
-    H_overall       = sum(Hs; cutoff=cutoff, maxdim=env_maxdim)
-    @debug "Summed Hs, maxdim=$maxdim"
+    @timeit "sum MPS" begin
+        H_overall       = sum(Hs; cutoff=cutoff, maxdim=env_maxdim)
+    end
     side_H       = side == :left ? H[:, col] : H[:, col - 1]
     side_H_terms = getDirectional(vcat(side_H...), Horizontal)
-    @debug "Trying to alloc $(Ny*length(side_H_terms))"
     in_progress  = Matrix{ITensor}(undef, Ny, length(side_H_terms))
     @inbounds for side_term in 1:length(side_H_terms)
         @debug "Generating edge bonds for term $side_term"
@@ -61,11 +64,15 @@ function buildNextEnvironment(A::PEPS, prev_Env::Environments, H, previous_combi
     cutoff::Float64 = get(kwargs, :cutoff, 1e-13)
     maxdim::Int     = get(kwargs, :maxdim, 1)
     env_maxdim::Int = get(kwargs, :env_maxdim, maxdim)
+    GC.gc()
+    synchronize()
+    CuArrays.memory_status()
+    flush(stdout)
+    synchronize()
     @timeit "build new_I and new_H" begin
         new_I     = applyMPO(I_mpo, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
         new_H     = applyMPO(I_mpo, prev_Env.H; cutoff=cutoff, maxdim=env_maxdim)
     end
-    @debug "Built new I and H"
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
     hori_H_terms  = getDirectional(vcat(H[:, col]...), Horizontal)
@@ -79,7 +86,6 @@ function buildNextEnvironment(A::PEPS, prev_Env::Environments, H, previous_combi
     @timeit "build new verts" begin
         vHs = [buildNewVerticals(A, previous_combiners, next_combiners, up_combiners, vert_H_terms[vert_op], col) for vert_op in 1:length(vert_H_terms)]
     end
-    @debug "Built new Vs"
     @timeit "build new fields" begin
         fHs = [buildNewFields(A, previous_combiners, next_combiners, up_combiners, field_H_terms[field_op], col) for field_op in 1:length(field_H_terms)]
     end
@@ -127,12 +133,10 @@ function buildNewVerticals(A::PEPS, previous_combiners::Vector, next_combiners::
     ops[vertical_row_b] = replaceindex!(copy(H.ops[2]), H.site_ind, col_site_inds[vertical_row_b])
     ops[vertical_row_b] = replaceindex!(ops[vertical_row_b], H.site_ind', col_site_inds[vertical_row_b]') 
     internal_cmb_u      = is_cu ? vcat(cuITensor(1.0), up_combiners, cuITensor(1.0)) : vcat(ITensor(1.0), up_combiners, ITensor(1.0)) 
-    AAs            = Vector{ITensor}(undef, Ny)
-    AAs[1] = A[1, col] * ops[1] * prime(dag(A[1, col])) * next_combiners[1] * up_combiners[1] * previous_combiners[1]
-    @inbounds for row in 2:Ny-1
-        AAs[row] = A[row, col] * ops[row] * prime(dag(A[row, col])) * next_combiners[row] * previous_combiners[row] * up_combiners[row-1] * up_combiners[row]
+    AAs                 = Vector{ITensor}(undef, Ny)
+    @inbounds for row in 1:Ny
+        AAs[row] = A[row, col] * ops[row] * prime(dag(A[row, col])) * next_combiners[row] * previous_combiners[row] * internal_cmb_u[row+1] * internal_cmb_u[row]
     end
-    AAs[Ny] = A[Ny, col] * ops[Ny] * prime(dag(A[Ny, col])) * next_combiners[Ny] * previous_combiners[Ny] * up_combiners[Ny-1]
     return MPO(Ny, AAs, 0, Ny+1)
 end
 
@@ -144,14 +148,11 @@ function buildNewFields(A::PEPS, previous_combiners::Vector, next_combiners::Vec
     field_row      = H.sites[1][1]
     ops[field_row] = replaceindex!(copy(H.ops[1]), H.site_ind, col_site_inds[field_row]) 
     ops[field_row] = replaceindex!(ops[field_row], H.site_ind', col_site_inds[field_row]') 
-    #internal_cmb_u = is_cu ? vcat(cuITensor(1.0), up_combiners, cuITensor(1.0)) : vcat(ITensor(1.0), up_combiners, ITensor(1.0)) 
+    internal_cmb_u = is_cu ? vcat(cuITensor(1.0), up_combiners, cuITensor(1.0)) : vcat(ITensor(1.0), up_combiners, ITensor(1.0)) 
     AAs            = Vector{ITensor}(undef, Ny)
-    AAs[1] = A[1, col] * ops[1] * prime(dag(A[1, col])) * next_combiners[1] * up_combiners[1] * previous_combiners[1]
-    @inbounds for row in 2:Ny-1
-        AAs[row] = A[row, col] * ops[row] * prime(dag(A[row, col])) * next_combiners[row] * previous_combiners[row] * up_combiners[row-1] * up_combiners[row]
+    @inbounds for row in 1:Ny
+        AAs[row] = A[row, col] * ops[row] * prime(dag(A[row, col])) * next_combiners[row] * previous_combiners[row] * internal_cmb_u[row+1] * internal_cmb_u[row]
     end
-    AAs[Ny] = A[Ny, col] * ops[Ny] * prime(dag(A[Ny, col])) * next_combiners[Ny] * previous_combiners[Ny] * up_combiners[Ny-1]
-    #AAs            = [ A[row, col] * ops[row] * prime(dag(A[row, col])) * next_combiners[row] * previous_combiners[row] * internal_cmb_u[row] * internal_cmb_u[row+1] for row in 1:Ny ]
     return MPO(Ny, AAs, 0, Ny+1)
 end
 
@@ -272,15 +273,17 @@ function buildLs(A::PEPS, H; kwargs...)
     start_col::Int     = get(kwargs, :start_col, 1)
     if start_col == 1
         left_H_terms = getDirectional(H[1], Horizontal)
-        @debug "Building left col $start_col"
-        Ls[1] = buildEdgeEnvironment(A, H, left_H_terms, previous_combiners, :left, 1; kwargs...)
+        @timeit "left edge env" begin
+            Ls[1] = buildEdgeEnvironment(A, H, left_H_terms, previous_combiners, :left, 1; kwargs...)
+        end
     elseif start_col - 1 > 1
         previous_combiners = [reconnect(commonindex(A[row, start_col], A[row, start_col - 1]), Ls[start_col-1].I[row]) for row in 1:Ny]
     end
     loop_col = start_col == 1 ? 2 : start_col
     @inbounds for col in loop_col:(Nx-1)
-        @debug "Building left col $col"
-        Ls[col] = buildNextEnvironment(A, Ls[col-1], H, previous_combiners, next_combiners, :left, col; kwargs...)
+        @timeit "left next env" begin 
+            Ls[col] = buildNextEnvironment(A, Ls[col-1], H, previous_combiners, next_combiners, :left, col; kwargs...)
+        end
         previous_combiners = deepcopy(next_combiners)
     end
     return Ls
@@ -294,14 +297,17 @@ function buildRs(A::PEPS, H; kwargs...)
     Rs                 = Vector{Environments}(undef, Nx)
     if start_col == Nx
         right_H_terms = getDirectional(H[Nx-1], Horizontal)
-        Rs[Nx]        = buildEdgeEnvironment(A, H, right_H_terms, previous_combiners, :right, Nx; kwargs...)
+        @timeit "right edge env" begin
+            Rs[Nx]        = buildEdgeEnvironment(A, H, right_H_terms, previous_combiners, :right, Nx; kwargs...)
+        end
     elseif start_col + 1 < Nx
         previous_combiners = [reconnect(commonindex(A[row, start_col], A[row, start_col + 1]), Rs[start_col+1].I[row]) for row in 1:Ny]
     end
     loop_col = start_col == Nx ? Nx - 1 : start_col
     @inbounds for col in reverse(2:loop_col)
-        @debug "Building right col $col"
-        Rs[col] = buildNextEnvironment(A, Rs[col+1], H, previous_combiners, next_combiners, :right, col; kwargs...)
+        @timeit "right next env" begin 
+            Rs[col] = buildNextEnvironment(A, Rs[col+1], H, previous_combiners, next_combiners, :right, col; kwargs...)
+        end
         previous_combiners = deepcopy(next_combiners)
     end
     return Rs

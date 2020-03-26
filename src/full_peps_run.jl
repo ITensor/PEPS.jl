@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate("..")
-using TimerOutputs, Statistics, ArgParse, CUDAnative, Distributions
-include("peps.jl")
+using TimerOutputs, Statistics, ArgParse, CUDAnative, CUDAdrv, Distributions
+include("peps_util.jl")
 
 s = ArgParseSettings()
 @add_arg_table! s begin
@@ -121,3 +121,4 @@ cA, tS, bytes, gctime, memallocs = @timed doSweeps(cA, Ls, Rs, H; mindim=D, maxd
 println("Done sweeping GPU $tS")
 flush(stdout)
 flush(io)
+print_timer()
