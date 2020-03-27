@@ -1,8 +1,11 @@
+include("operator.jl")
+
 struct Environments
     I::MPS
     H::MPS
     InProgress::Matrix{ITensor}
 end
+
 
 function buildEdgeEnvironment(A::PEPS, 
                               H, 
@@ -132,7 +135,7 @@ function buildNewVerticals(A::PEPS,
                            previous_combiners::Vector, 
                            next_combiners::Vector{ITensor}, 
                            up_combiners::Vector{ITensor}, 
-                           H, 
+                           H::Operator, 
                            col::Int)::MPO
     Ny, Nx = size(A)
     is_cu               = is_gpu(A) 
