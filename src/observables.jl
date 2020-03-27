@@ -1,4 +1,8 @@
-function measureXmag(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, col; kwargs...)
+function measureXmag(A::PEPS, 
+                     Ls::Vector{Environments}, 
+                     Rs::Vector{Environments}, 
+                     col; 
+                     kwargs...)
     s = Index(2, "Site,SpinInd")
     X = ITensor(s, s')
     is_cu         = is_gpu(A) 
@@ -22,7 +26,11 @@ function measureXmag(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}
     return measuredX
 end
 
-function measureZmag(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, col; kwargs...)
+function measureZmag(A::PEPS, 
+                     Ls::Vector{Environments}, 
+                     Rs::Vector{Environments}, 
+                     col; 
+                     kwargs...)
     s = Index(2, "Site,SpinInd")
     Z = ITensor(s, s')
     is_cu         = is_gpu(A) 
@@ -47,7 +55,11 @@ function measureZmag(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}
     return measuredZ
 end
 
-function measureSmagVertical(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, col; kwargs...)
+function measureSmagVertical(A::PEPS, 
+                             Ls::Vector{Environments}, 
+                             Rs::Vector{Environments}, 
+                             col; 
+                             kwargs...)
     s = Index(2, "Site,SpinInd")
     Z = ITensor(s, s')
     Z[s(1), s'(1)] = 0.5
@@ -84,7 +96,11 @@ function measureSmagVertical(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Envir
     return measuredSV
 end
 
-function measureSmagHorizontal(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, col; kwargs...)
+function measureSmagHorizontal(A::PEPS, 
+                               Ls::Vector{Environments}, 
+                               Rs::Vector{Environments}, 
+                               col; 
+                               kwargs...)
     s = Index(2, "Site,SpinInd")
     Z = ITensor(s, s')
     Z[s(1), s'(1)] = 0.5
