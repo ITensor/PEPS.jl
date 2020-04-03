@@ -194,7 +194,7 @@ function buildN(A::PEPS,
                 IEnvs, 
                 row::Int, 
                 col::Int, 
-                phi::ITensor)::ITensor
+                ϕ::ITensor)::ITensor
     Ny, Nx   = size(A)
     N        = spinI(findindex(A[row, col], "Site"); is_gpu=is_gpu(A))
     workingN = N
@@ -208,7 +208,7 @@ function buildN(A::PEPS,
         ci = commonindex(A[row, col], A[row, col-1])
         workingN *= multiply_side_ident(A[row, col], ci, copy(L.I[row])) 
     end
-    workingN *= phi
+    workingN *= ϕ
     if col < Nx
         ci = commonindex(A[row, col], A[row, col+1])
         workingN *= multiply_side_ident(A[row, col], ci, copy(R.I[row])) 
@@ -330,7 +330,7 @@ function buildHIedge(A::PEPS,
                      row::Int, 
                      col::Int, 
                      side::Symbol, 
-                     phi::ITensor )
+                     ϕ::ITensor )
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     HI     = is_cu ? cuITensor(1.0) : ITensor(1.0)
@@ -352,8 +352,8 @@ function buildHIedge(A::PEPS,
     replaceindex!(acmb, acmbi, cmb)
     op = spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
     op = is_cu ? cuITensor(op) : op
-    HI *= phi
-    IH *= phi
+    HI *= ϕ
+    IH *= ϕ
     HI *= op
     IH *= op
     HI *= E.I[row] * acmb
@@ -368,7 +368,7 @@ function buildHIedge(A::PEPS,
         HI *= AA * E.I[work_row]
         IH *= E.H[work_row] * AA
     end
-    AAinds = IndexSet(prime(phi))
+    AAinds = IndexSet(prime(ϕ))
     @assert hasinds(inds(IH), AAinds)
     @assert hasinds(AAinds, inds(IH))
     return (IH,)
