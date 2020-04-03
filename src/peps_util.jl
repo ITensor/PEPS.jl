@@ -188,7 +188,13 @@ function reconnect(combiner_ind::Index, environment::ITensor)
     return new_combiner
 end
 
-function buildN(A::PEPS, L::Environments, R::Environments, IEnvs, row::Int, col::Int, ϕ::ITensor)::ITensor
+function buildN(A::PEPS, 
+                L::Environments, 
+                R::Environments, 
+                IEnvs, 
+                row::Int, 
+                col::Int, 
+                ϕ::ITensor)::ITensor
     Ny, Nx   = size(A)
     N        = spinI(findindex(A[row, col], "Site"); is_gpu=is_gpu(A))
     workingN = N
@@ -218,7 +224,12 @@ function multiply_side_ident(A::ITensor, ci::Index, side_I::ITensor)
     return side_I * acmb
 end
 
-function nonWorkRow(A::PEPS, L::Environments, R::Environments, H::Operator, row::Int, col::Int)::ITensor
+function nonWorkRow(A::PEPS, 
+                    L::Environments, 
+                    R::Environments, 
+                    H::Operator, 
+                    row::Int, 
+                    col::Int)::ITensor
     Ny, Nx  = size(A)
     op_rows = H.sites
     is_cu   = is_gpu(A) 
@@ -244,7 +255,17 @@ function nonWorkRow(A::PEPS, L::Environments, R::Environments, H::Operator, row:
     return AA
 end
 
-function sum_rows_in_col(A::PEPS, L::Environments, R::Environments, H::Operator, row::Int, col::Int, low_row::Int, high_row::Int, above::Bool, IA::ITensor, IB::ITensor)::ITensor
+function sum_rows_in_col(A::PEPS, 
+                         L::Environments, 
+                         R::Environments, 
+                         H::Operator, 
+                         row::Int, 
+                         col::Int, 
+                         low_row::Int, 
+                         high_row::Int, 
+                         above::Bool, 
+                         IA::ITensor, 
+                         IB::ITensor)::ITensor
     Ny, Nx  = size(A)
     op_rows = H.sites
     is_cu   = is_gpu(A) 
@@ -304,7 +325,12 @@ function sum_rows_in_col(A::PEPS, L::Environments, R::Environments, H::Operator,
     return Hterm
 end
 
-function buildHIedge( A::PEPS, E::Environments, row::Int, col::Int, side::Symbol, ϕ::ITensor )
+function buildHIedge(A::PEPS, 
+                     E::Environments, 
+                     row::Int, 
+                     col::Int, 
+                     side::Symbol, 
+                     ϕ::ITensor )
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     HI     = is_cu ? cuITensor(1.0) : ITensor(1.0)
@@ -348,7 +374,12 @@ function buildHIedge( A::PEPS, E::Environments, row::Int, col::Int, side::Symbol
     return (IH,)
 end
 
-function buildHIs(A::PEPS, L::Environments, R::Environments, row::Int, col::Int, ϕ::ITensor)
+function buildHIs(A::PEPS, 
+                  L::Environments, 
+                  R::Environments, 
+                  row::Int, 
+                  col::Int, 
+                  ϕ::ITensor)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     col == 1  && return buildHIedge(A, R, row, col, :left, ϕ)
@@ -416,7 +447,15 @@ function buildHIs(A::PEPS, L::Environments, R::Environments, row::Int, col::Int,
     return (HLI, IHR)
 end
 
-function verticalTerms(A::PEPS, L::Environments, R::Environments, AI, AV, H, row::Int, col::Int, ϕ::ITensor)::Vector{ITensor} 
+function verticalTerms(A::PEPS, 
+                       L::Environments, 
+                       R::Environments, 
+                       AI, 
+                       AV, 
+                       H, 
+                       row::Int, 
+                       col::Int, 
+                       ϕ::ITensor)::Vector{ITensor} 
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     vTerms = ITensor[]#fill(ITensor(), length(H))
@@ -531,7 +570,15 @@ function verticalTerms(A::PEPS, L::Environments, R::Environments, AI, AV, H, row
     return vTerms
 end
 
-function fieldTerms(A::PEPS, L::Environments, R::Environments, AI, AF, H, row::Int, col::Int, ϕ::ITensor)::Vector{ITensor} 
+function fieldTerms(A::PEPS, 
+                    L::Environments, 
+                    R::Environments, 
+                    AI, 
+                    AF, 
+                    H, 
+                    row::Int, 
+                    col::Int, 
+                    ϕ::ITensor)::Vector{ITensor} 
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     fTerms = Vector{ITensor}(undef, length(H))
@@ -592,7 +639,12 @@ function fieldTerms(A::PEPS, L::Environments, R::Environments, AI, AF, H, row::I
     return fTerms
 end
 
-function connectLeftTerms(A::PEPS, L::Environments, R::Environments, AI, AL, H, row::Int, col::Int, ϕ::ITensor)::Vector{ITensor} 
+function connectLeftTerms(A::PEPS, 
+                          L::Environments, 
+                          R::Environments, 
+                          AI, AL, H, 
+                          row::Int, col::Int, 
+                          ϕ::ITensor)::Vector{ITensor} 
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     lTerms = Vector{ITensor}(undef, length(H))
@@ -649,7 +701,12 @@ function connectLeftTerms(A::PEPS, L::Environments, R::Environments, AI, AL, H, 
     return lTerms
 end
 
-function connectRightTerms(A::PEPS, L::Environments, R::Environments, AI, AR, H, row::Int, col::Int, ϕ::ITensor)::Vector{ITensor} 
+function connectRightTerms(A::PEPS, 
+                           L::Environments, 
+                           R::Environments, 
+                           AI, AR, H, 
+                           row::Int, col::Int, 
+                           ϕ::ITensor)::Vector{ITensor} 
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     rTerms = Vector{ITensor}(undef, length(H))
@@ -704,7 +761,12 @@ function connectRightTerms(A::PEPS, L::Environments, R::Environments, AI, AR, H,
     return rTerms
 end
 
-function buildLocalH(A::PEPS, L::Environments, R::Environments, AncEnvs, H, row::Int, col::Int, ϕ::ITensor; verbose::Bool=false)
+function buildLocalH(A::PEPS, 
+                     L::Environments, R::Environments, 
+                     AncEnvs, H, 
+                     row::Int, col::Int, 
+                     ϕ::ITensor; 
+                     verbose::Bool=false)
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
     term_count    = 1 + length(field_H_terms) + length(vert_H_terms)
@@ -938,7 +1000,10 @@ function buildAncs(A::PEPS, L::Environments, R::Environments, H, col::Int)
     return Ancs
 end
 
-function updateAncs(A::PEPS, L::Environments, R::Environments, AncEnvs, H, row::Int, col::Int)
+function updateAncs(A::PEPS, 
+                    L::Environments, R::Environments, 
+                    AncEnvs, H, 
+                    row::Int, col::Int)
     Ny, Nx = size(A)
     is_cu = is_gpu(A) 
    
@@ -990,7 +1055,11 @@ function (M::ITensorMap)(v::ITensor)
     return noprime(localH)
 end
 
-function optimizeLocalH(A::PEPS, L::Environments, R::Environments, AncEnvs, H, row::Int, col::Int; kwargs...)
+function optimizeLocalH(A::PEPS, 
+                        L::Environments, R::Environments, 
+                        AncEnvs, H, 
+                        row::Int, col::Int; 
+                        kwargs...)
     Ny, Nx        = size(A)
     is_cu         = is_gpu(A) 
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
@@ -1059,7 +1128,10 @@ function optimizeLocalH(A::PEPS, L::Environments, R::Environments, AncEnvs, H, r
     return A, AncEnvs
 end
 
-function measureEnergy(A::PEPS, L::Environments, R::Environments, AncEnvs, H, row::Int, col::Int)::Tuple{Float64, Float64}
+function measureEnergy(A::PEPS, 
+                       L::Environments, R::Environments, 
+                       AncEnvs, H, 
+                       row::Int, col::Int)::Tuple{Float64, Float64}
     Ny, Nx    = size(A)
     Hs, N     = buildLocalH(A, L, R, AncEnvs, H, row, col, A[row, col])
     initial_N = collect(N * dag(A[row, col])')
@@ -1068,7 +1140,11 @@ function measureEnergy(A::PEPS, L::Environments, R::Environments, AncEnvs, H, ro
     return real(scalar(initial_N)), real(scalar(initial_E))/real(scalar(initial_N))
 end
 
-function sweepColumn(A::PEPS, L::Environments, R::Environments, H, col::Int; kwargs...)
+function sweepColumn(A::PEPS, 
+                     L::Environments, R::Environments, 
+                     H, 
+                     col::Int; 
+                     kwargs...)
     Ny, Nx = size(A)
     @debug "Beginning intraColumnGauge for col $col" 
     A = intraColumnGauge(A, col; kwargs...)
@@ -1093,7 +1169,11 @@ function sweepColumn(A::PEPS, L::Environments, R::Environments, H, col::Int; kwa
     return A
 end
 
-function rightwardSweep(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; kwargs...)
+function rightwardSweep(A::PEPS, 
+                        Ls::Vector{Environments}, 
+                        Rs::Vector{Environments}, 
+                        H; 
+                        kwargs...)
     simple_update_cutoff = get(kwargs, :simple_update_cutoff, 4)
     Ny, Nx = size(A)
     dummyI = MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
@@ -1142,7 +1222,11 @@ function rightwardSweep(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environmen
     return A, Ls, Rs
 end
 
-function leftwardSweep(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; kwargs...)
+function leftwardSweep(A::PEPS, 
+                       Ls::Vector{Environments}, 
+                       Rs::Vector{Environments}, 
+                       H; 
+                       kwargs...)
     simple_update_cutoff = get(kwargs, :simple_update_cutoff, 4)
     Ny, Nx = size(A)
     dummyI = MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
@@ -1191,7 +1275,20 @@ function leftwardSweep(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environment
     return A, Ls, Rs
 end
 
-function doSweeps(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; mindim::Int=1, maxdim::Int=1, simple_update_cutoff::Int=4, sweep_start::Int=1, sweep_count::Int=10, cutoff::Float64=0., env_maxdim=2maxdim, do_mag::Bool=false, prefix="$(Nx)_$(maxdim)_mag", max_gauge_iter::Int=10)
+function doSweeps(A::PEPS, 
+                  Ls::Vector{Environments}, 
+                  Rs::Vector{Environments},
+                  H; 
+                  mindim::Int=1, 
+                  maxdim::Int=1, 
+                  simple_update_cutoff::Int=4, 
+                  sweep_start::Int=1, 
+                  sweep_count::Int=10, 
+                  cutoff::Float64=0., 
+                  env_maxdim=2maxdim, 
+                  do_mag::Bool=false, 
+                  prefix="$(Nx)_$(maxdim)_mag", 
+                  max_gauge_iter::Int=10)
     for sweep in sweep_start:sweep_count
         if iseven(sweep)
             (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter)

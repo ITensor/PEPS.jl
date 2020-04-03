@@ -4,7 +4,13 @@ struct Environments
     InProgress::Matrix{ITensor}
 end
 
-function buildEdgeEnvironment(A::PEPS, H, left_H_terms, next_combiners, side::Symbol, col::Int; kwargs...)::Environments
+function buildEdgeEnvironment(A::PEPS, 
+                              H, 
+                              left_H_terms, 
+                              next_combiners, 
+                              side::Symbol, 
+                              col::Int; 
+                              kwargs...)::Environments
     Ny, Nx              = size(A)
     is_cu::Bool         = is_gpu(A) 
     up_combiners        = Vector{ITensor}(undef, Ny-1)
@@ -43,7 +49,14 @@ function buildEdgeEnvironment(A::PEPS, H, left_H_terms, next_combiners, side::Sy
     return Environments(I_mps, H_overall, in_progress)
 end
 
-function buildNextEnvironment(A::PEPS, prev_Env::Environments, H, previous_combiners::Vector{ITensor}, next_combiners::Vector{ITensor}, side::Symbol, col::Int; kwargs...)
+function buildNextEnvironment(A::PEPS, 
+                              prev_Env::Environments, 
+                              H, 
+                              previous_combiners::Vector{ITensor}, 
+                              next_combiners::Vector{ITensor}, 
+                              side::Symbol, 
+                              col::Int; 
+                              kwargs...)
     Ny, Nx = size(A)
     working_combiner = Vector{ITensor}(undef, Ny)
     up_combiners     = Vector{ITensor}(undef, Ny-1)
@@ -115,7 +128,12 @@ function buildNextEnvironment(A::PEPS, prev_Env::Environments, H, previous_combi
     return Environments(new_I, H_overall, in_progress)
 end
 
-function buildNewVerticals(A::PEPS, previous_combiners::Vector, next_combiners::Vector{ITensor}, up_combiners::Vector{ITensor}, H, col::Int)::MPO
+function buildNewVerticals(A::PEPS, 
+                           previous_combiners::Vector, 
+                           next_combiners::Vector{ITensor}, 
+                           up_combiners::Vector{ITensor}, 
+                           H, 
+                           col::Int)::MPO
     Ny, Nx = size(A)
     is_cu               = is_gpu(A) 
     col_site_inds       = [findindex(A[row, col], "Site") for row in 1:Ny]
@@ -136,7 +154,12 @@ function buildNewVerticals(A::PEPS, previous_combiners::Vector, next_combiners::
     return MPO(Ny, AAs, 0, Ny+1)
 end
 
-function buildNewFields(A::PEPS, previous_combiners::Vector, next_combiners::Vector{ITensor}, up_combiners::Vector{ITensor}, H, col::Int)::MPO
+function buildNewFields(A::PEPS, 
+                        previous_combiners::Vector, 
+                        next_combiners::Vector{ITensor}, 
+                        up_combiners::Vector{ITensor}, 
+                        H, 
+                        col::Int)::MPO
     Ny, Nx = size(A)
     col_site_inds  = [findindex(A[row, col], "Site") for row in 1:Ny]
     is_cu         = is_gpu(A) 
@@ -155,7 +178,10 @@ function buildNewFields(A::PEPS, previous_combiners::Vector, next_combiners::Vec
     return MPO(Ny, AAs, 0, Ny+1)
 end
 
-function buildNewI(A::PEPS, col::Int, previous_combiners::Vector, side::Symbol)::Tuple{MPO, Vector{ITensor}, Vector{ITensor}}
+function buildNewI(A::PEPS, 
+                   col::Int, 
+                   previous_combiners::Vector, 
+                   side::Symbol)::Tuple{MPO, Vector{ITensor}, Vector{ITensor}}
     Ny, Nx         = size(A)
     next_col       = side == :left ? col + 1 : col - 1 # side is handedness of environment
     AA             = [A[row, col] * prime(dag(A[row, col]), "Link") for row in 1:Ny]
@@ -175,7 +201,11 @@ function buildNewI(A::PEPS, col::Int, previous_combiners::Vector, side::Symbol):
     return Iapp, next_combiners, up_combiners
 end
 
-function generateEdgeDanglingBonds(A::PEPS, up_combiners::Vector{ITensor}, H, side::Symbol, col::Int)::Vector{ITensor}
+function generateEdgeDanglingBonds(A::PEPS, 
+                                   up_combiners::Vector{ITensor}, 
+                                   H, 
+                                   side::Symbol, 
+                                   col::Int)::Vector{ITensor}
     Ny, Nx         = size(A)
     is_cu         = is_gpu(A) 
     op_row         = side == :left ? H.sites[1][1] : H.sites[2][1];
@@ -195,7 +225,15 @@ function generateEdgeDanglingBonds(A::PEPS, up_combiners::Vector{ITensor}, H, si
     return this_IP
 end
 
-function generateNextDanglingBonds(A::PEPS, previous_combiners::Vector{ITensor}, next_combiners::Vector{ITensor}, up_combiners::Vector{ITensor}, H, Ident::MPS, side::Symbol, col::Int; kwargs...)::Vector{ITensor}
+function generateNextDanglingBonds(A::PEPS, 
+                                   previous_combiners::Vector{ITensor}, 
+                                   next_combiners::Vector{ITensor}, 
+                                   up_combiners::Vector{ITensor}, 
+                                   H, 
+                                   Ident::MPS, 
+                                   side::Symbol, 
+                                   col::Int; 
+                                   kwargs...)::Vector{ITensor}
     Ny, Nx          = size(A)
     is_cu          = is_gpu(A) 
     op_row          = side == :left ? H.sites[1][1] : H.sites[2][1]
@@ -220,7 +258,15 @@ function generateNextDanglingBonds(A::PEPS, previous_combiners::Vector{ITensor},
     return ITensor[result[row]*next_combiners[row] for row in 1:Ny]
 end
 
-function connectDanglingBonds(A::PEPS, next_combiners::Vector{ITensor}, up_combiners::Vector{ITensor}, oldH, in_progress::Vector{ITensor}, side::Symbol, work_row::Int, col::Int; kwargs...)::Vector{ITensor}
+function connectDanglingBonds(A::PEPS, 
+                              next_combiners::Vector{ITensor}, 
+                              up_combiners::Vector{ITensor}, 
+                              oldH, 
+                              in_progress::Vector{ITensor}, 
+                              side::Symbol, 
+                              work_row::Int, 
+                              col::Int; 
+                              kwargs...)::Vector{ITensor}
     Ny, Nx   = size(A)
     is_cu    = is_gpu(A) 
     op_row_a = oldH.sites[1][1]
