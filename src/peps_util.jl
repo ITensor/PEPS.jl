@@ -71,7 +71,7 @@ function checkerboardPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
         col = mod(ii-1, Nx) + 1
         spin_side = isodd(row - 1) ⊻ isodd(col - 1) ? 2 : 1
         si  = findindex(A[ii], "Site") 
-        lis = findinds(A[ii], "Link") 
+        lis = filter(inds(A[ii]), "Link") 
         ivs = [li(1) for li in lis]
         ivs = vcat(ivs, si(spin_side))
         A[ii][ivs...] = 1.0
@@ -169,7 +169,7 @@ function spinI(s::Index; is_gpu::Bool=false)::ITensor
     I_data      = is_gpu ? CuArrays.zeros(Float64, ITensors.dim(s)*ITensors.dim(s)) : zeros(Float64, ITensors.dim(s), ITensors.dim(s))
     idi         = diagind(reshape(I_data, ITensors.dim(s), ITensors.dim(s)), 0)
     I_data[idi] = is_gpu ? CuArrays.ones(Float64, ITensors.dim(s)) : ones(Float64, ITensors.dim(s))
-    I           = is_gpu ? cuITensor( I_data, IndexSet(s, s') ) : ITensor(vec(I_data), IndexSet(s, s'))
+    I           = is_gpu ? cuITensor( I_data, IndexSet(s, s') ) : itensor(I_data, IndexSet(s, s'))
     return I
 end
 
@@ -368,7 +368,7 @@ function buildHIedge(A::PEPS,
         HI *= AA * E.I[work_row]
         IH *= E.H[work_row] * AA
     end
-    AAinds = IndexSet(prime(ϕ))
+    AAinds = inds(prime(ϕ))
     @assert hasinds(inds(IH), AAinds)
     @assert hasinds(AAinds, inds(IH))
     return (IH,)
@@ -439,7 +439,7 @@ function buildHIs(A::PEPS,
     op   = spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
     HLI *= op
     IHR *= op
-    AAinds = IndexSet(prime(ϕ))
+    AAinds = inds(prime(ϕ))
     @assert hasinds(inds(IHR), AAinds)
     @assert hasinds(inds(HLI), AAinds)
     @assert hasinds(AAinds, inds(IHR))
@@ -459,7 +459,7 @@ function verticalTerms(A::PEPS,
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     vTerms = ITensor[]#fill(ITensor(), length(H))
-    AAinds = IndexSet(prime(ϕ))
+    AAinds = inds(prime(ϕ))
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
     @inbounds for opcode in 1:length(H)
         thisVert = dummy 
@@ -583,7 +583,7 @@ function fieldTerms(A::PEPS,
     is_cu  = is_gpu(A) 
     fTerms = Vector{ITensor}(undef, length(H))
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
-    AAinds = IndexSet(prime(ϕ))
+    AAinds = inds(prime(ϕ))
     @inbounds for opcode in 1:length(H)
         thisField = dummy 
         op_row    = H[opcode].sites[1][1]
@@ -648,7 +648,7 @@ function connectLeftTerms(A::PEPS,
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     lTerms = Vector{ITensor}(undef, length(H))
-    AAinds = IndexSet(prime(ϕ))
+    AAinds = inds(prime(ϕ))
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
     @inbounds for opcode in 1:length(H)
         op_row_b = H[opcode].sites[2][1]
@@ -710,7 +710,7 @@ function connectRightTerms(A::PEPS,
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     rTerms = Vector{ITensor}(undef, length(H))
-    AAinds = IndexSet(prime(ϕ))
+    AAinds = inds(prime(ϕ))
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
     @inbounds for opcode in 1:length(H)
         op_row_a = H[opcode].sites[1][1]
@@ -910,12 +910,12 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
                 op_b = replaceindex!(op_b, hH.site_ind', hori_col == col ? si_b' : si_a')
                 Hab_hori = ITensors.dim(Hab_hori) < 2 ? op_a * op_b : Hab_hori + op_a * op_b
             end
-            cmb, ci   = combiner(findinds(Hab_hori, ("",0)), tags="hab,Site")
+            cmb, ci   = combiner(findinds(Hab_hori, 0), tags="hab,Site")
             Hab_hori *= cmb
             Hab_hori *= cmb'
             Hab_mat   = is_cu ? matrix(collect(Hab_hori)) : matrix(Hab_hori)
             expiH_mat = exp(τ*Hab_mat)
-            expiH     = is_cu ? cuITensor(vec(expiH_mat), ci, ci') : ITensor(expiH_mat, ci, ci')
+            expiH     = is_cu ? cuITensor(vec(expiH_mat), ci, ci') : itensor(expiH_mat, ci, ci')
             expiH *= cmb
             expiH *= cmb'
              
@@ -941,12 +941,12 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
                 op_b = replaceindex!(op_b, vH.site_ind', si_b')
                 Hab_vert = ITensors.dim(Hab_vert) < 2 ? op_a * op_b : Hab_vert + op_a * op_b
             end
-            cmb, ci   = combiner(findinds(Hab_vert, ("",0)), tags="hab,Site")
+            cmb, ci   = combiner(findinds(Hab_vert, 0), tags="hab,Site")
             Hab_vert *= cmb
             Hab_vert *= cmb'
             Hab_mat   = is_cu ? matrix(collect(Hab_vert)) : matrix(Hab_vert)
             expiH_mat = exp(τ*Hab_mat)
-            expiH     = is_cu ? cuITensor(vec(expiH_mat), ci, ci') : ITensor(expiH_mat, ci, ci')
+            expiH     = is_cu ? cuITensor(vec(expiH_mat), ci, ci') : itensor(expiH_mat, ci, ci')
             expiH *= cmb
             expiH *= cmb'
             bond  = noprime(expiH * Ua * Ub)

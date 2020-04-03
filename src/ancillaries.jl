@@ -62,8 +62,8 @@ function makeAncillaryFs(A::PEPS, L::Environments, R::Environments, H, col::Int)
     for opcode in 1:length(H)
         op_row      = H[opcode].sites[1][1]
         ops = map(x -> spinI(x; is_gpu=is_cu), col_site_inds)
-        ops[op_row] = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row])
-        ops[op_row] = replaceindex!(copy(ops[op_row]), H[opcode].site_ind', col_site_inds[op_row]')
+        ops[op_row] = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row])
+        ops[op_row] = replaceind!(copy(ops[op_row]), H[opcode].site_ind', col_site_inds[op_row]')
         ancFs = [prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx) for row in 1:Ny]
         Fabove[opcode] = cumprod(reverse(ancFs)) 
     end
@@ -81,8 +81,8 @@ function updateAncillaryFs(A::PEPS, Fbelow, Ibelow::Vector{ITensor}, L::Environm
         op_row      = H[opcode].sites[1][1]
         ops         = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
         if op_row == row
-            ops[op_row] = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row])
-            ops[op_row] = replaceindex!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
+            ops[op_row] = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row])
+            ops[op_row] = replaceind!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
         end
         ancF = prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx)
         if length(Fbelow[opcode]) > 0
@@ -106,10 +106,10 @@ function makeAncillaryVs(A::PEPS, L::Environments, R::Environments, H, col::Int)
         op_row_a      = H[opcode].sites[1][1]
         op_row_b      = H[opcode].sites[2][1]
         ops           = map(x->spinI(x; is_gpu=is_cu), col_site_inds)
-        ops[op_row_a] = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row_a])
-        ops[op_row_a] = replaceindex!(ops[op_row_a], H[opcode].site_ind', col_site_inds[op_row_a]')
-        ops[op_row_b] = replaceindex!(copy(H[opcode].ops[2]), H[opcode].site_ind, col_site_inds[op_row_b])
-        ops[op_row_b] = replaceindex!(ops[op_row_b], H[opcode].site_ind', col_site_inds[op_row_b]')
+        ops[op_row_a] = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row_a])
+        ops[op_row_a] = replaceind!(ops[op_row_a], H[opcode].site_ind', col_site_inds[op_row_a]')
+        ops[op_row_b] = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, col_site_inds[op_row_b])
+        ops[op_row_b] = replaceind!(ops[op_row_b], H[opcode].site_ind', col_site_inds[op_row_b]')
         ancVs         = [prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx) for row in 1:Ny]
         Vabove[opcode] = cumprod(reverse(ancVs))#[1:op_row_a+1] 
     end
@@ -128,10 +128,10 @@ function makeAncillaryVsBelow(A::PEPS, L::Environments, R::Environments, H, col:
         op_row_a      = H[opcode].sites[1][1]
         op_row_b      = H[opcode].sites[2][1]
         ops           = map(x->spinI(x; is_gpu=is_cu), col_site_inds)
-        ops[op_row_a] = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row_a])
-        ops[op_row_a] = replaceindex!(ops[op_row_a], H[opcode].site_ind', col_site_inds[op_row_a]')
-        ops[op_row_b] = replaceindex!(copy(H[opcode].ops[2]), H[opcode].site_ind, col_site_inds[op_row_b])
-        ops[op_row_b] = replaceindex!(ops[op_row_b], H[opcode].site_ind', col_site_inds[op_row_b]')
+        ops[op_row_a] = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row_a])
+        ops[op_row_a] = replaceind!(ops[op_row_a], H[opcode].site_ind', col_site_inds[op_row_a]')
+        ops[op_row_b] = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, col_site_inds[op_row_b])
+        ops[op_row_b] = replaceind!(ops[op_row_b], H[opcode].site_ind', col_site_inds[op_row_b]')
         ancVs = [prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx) for row in 1:Ny]
         Vbelow[opcode] = cumprod(ancVs)#[1:op_row_a+1] 
     end
@@ -149,10 +149,10 @@ function updateAncillaryVs(A::PEPS, Vbelow, Ibelow::Vector{ITensor}, L::Environm
         op_row_a      = H[opcode].sites[1][1]
         op_row_b      = H[opcode].sites[2][1]
         ops           = map(x->spinI(x; is_gpu=is_cu), col_site_inds)
-        ops[op_row_a] = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row_a])
-        ops[op_row_a] = replaceindex!(ops[op_row_a], H[opcode].site_ind', col_site_inds[op_row_a]')
-        ops[op_row_b] = replaceindex!(copy(H[opcode].ops[2]), H[opcode].site_ind, col_site_inds[op_row_b])
-        ops[op_row_b] = replaceindex!(ops[op_row_b], H[opcode].site_ind', col_site_inds[op_row_b]')
+        ops[op_row_a] = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row_a])
+        ops[op_row_a] = replaceind!(ops[op_row_a], H[opcode].site_ind', col_site_inds[op_row_a]')
+        ops[op_row_b] = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, col_site_inds[op_row_b])
+        ops[op_row_b] = replaceind!(ops[op_row_b], H[opcode].site_ind', col_site_inds[op_row_b]')
         if op_row_b < row
             AA  = prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx)
             push!(Vbelow[opcode], Vbelow[opcode][end] * AA)
@@ -177,8 +177,8 @@ function makeAncillarySide(A::PEPS, EnvIP::Environments, EnvIdent::Environments,
         ops         = map(x->spinI(x; is_gpu=is_cu), col_site_inds)
         ops         = is_cu ? map(cuITensor, ops) : ops
         this_op     = side == :left ? H[opcode].ops[2] : H[opcode].ops[1]
-        ops[op_row] = replaceindex!(copy(this_op), H[opcode].site_ind, col_site_inds[op_row])
-        ops[op_row] = replaceindex!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
+        ops[op_row] = replaceind!(copy(this_op), H[opcode].site_ind, col_site_inds[op_row])
+        ops[op_row] = replaceind!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
         AAs         = [A[row, col] * ops[row] * dag(A[row, col])' * EnvIP.InProgress[row, opcode] for row in 1:Ny]
         if (col > 1 && side == :right) || (col < Nx && side == :left)
             cis = [commonindex(A[row, col], A[row, next_col]) for row in 1:Ny]
@@ -201,8 +201,8 @@ function makeAncillarySideBelow(A::PEPS, EnvIP::Environments, EnvIdent::Environm
         ops         = map(x->spinI(x; is_gpu=is_cu), col_site_inds)
         ops         = is_cu ? map(cuITensor, ops) : ops
         this_op     = side == :left ? H[opcode].ops[2] : H[opcode].ops[1]
-        ops[op_row] = replaceindex!(copy(this_op), H[opcode].site_ind, col_site_inds[op_row])
-        ops[op_row] = replaceindex!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
+        ops[op_row] = replaceind!(copy(this_op), H[opcode].site_ind, col_site_inds[op_row])
+        ops[op_row] = replaceind!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
         AAs         = [A[row, col] * ops[row] * dag(A[row, col])' * EnvIP.InProgress[row, opcode] for row in 1:Ny]
         if (col > 1 && side == :right) || (col < Nx && side == :left)
             cis = [commonindex(A[row, col], A[row, next_col]) for row in 1:Ny]
@@ -225,8 +225,8 @@ function updateAncillarySide(A::PEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::En
         ops           = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
         ops           = is_cu ? map(cuITensor, ops) : ops
         this_op       = side == :left ? H[opcode].ops[2] : H[opcode].ops[1]
-        ops[op_row]   = replaceindex!(copy(this_op), H[opcode].site_ind, col_site_inds[op_row])
-        ops[op_row]   = replaceindex!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
+        ops[op_row]   = replaceind!(copy(this_op), H[opcode].site_ind, col_site_inds[op_row])
+        ops[op_row]   = replaceind!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
         AA            = A[row, col] * ops[row] * dag(A[row, col]')
         if (col > 1 && side == :right) || (col < Nx && side == :left)
             ci  = commonindex(A[row, col], A[row, prev_col])
@@ -238,8 +238,8 @@ function updateAncillarySide(A::PEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::En
             AAinds = inds(AA)
             Sbinds = inds(Sbelow[opcode][row-1])
             for aI in AAinds, sI in Sbinds
-                if hastags(aI, tags(sI)) && !hasindex(AAinds, sI)
-                    Sbelow[opcode][row-1] = replaceindex!(Sbelow[opcode][row-1], sI, aI)
+                if hastags(aI, tags(sI)) && !hasind(AAinds, sI)
+                    Sbelow[opcode][row-1] = replaceind!(Sbelow[opcode][row-1], sI, aI)
                 end
             end
         end
