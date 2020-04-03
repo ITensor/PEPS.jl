@@ -163,9 +163,7 @@ struct Operator
     dir::Op_Type
 end
 
-function getDirectional(ops::Vector{Operator}, dir::Op_Type) 
-  return collect(filter(x->x.dir==dir, ops))
-end
+getDirectional(ops::Vector{Operator}, dir::Op_Type) = collect(filter(x->x.dir==dir, ops))
 
 function spinI(s::Index; is_gpu::Bool=false)::ITensor
     I_data      = is_gpu ? CuArrays.zeros(Float64, ITensors.dim(s)*ITensors.dim(s)) : zeros(Float64, ITensors.dim(s), ITensors.dim(s))
