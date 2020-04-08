@@ -4,6 +4,8 @@ using Random, Logging, LinearAlgebra, DelimitedFiles
 
 import ITensors: tensors
 
+include("operator.jl")
+
 mutable struct PEPS
     Nx::Int
     Ny::Int
@@ -154,16 +156,6 @@ function Base.show(io::IO, A::PEPS)
       println(io,"$i $j $(A[i,j])")
   end
 end
-
-@enum Op_Type Field=0 Vertical=1 Horizontal=2
-struct Operator
-    sites::Vector{Pair{Int,Int}}
-    ops::Vector{ITensor}
-    site_ind::Index
-    dir::Op_Type
-end
-
-getDirectional(ops::Vector{Operator}, dir::Op_Type) = collect(filter(x->x.dir==dir, ops))
 
 function spinI(s::Index; is_gpu::Bool=false)::ITensor
     I_data      = is_gpu ? CuArrays.zeros(Float64, ITensors.dim(s)*ITensors.dim(s)) : zeros(Float64, ITensors.dim(s), ITensors.dim(s))
