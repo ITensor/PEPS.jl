@@ -13,7 +13,7 @@ function prepareRow(A::ITensor, op::ITensor, left_A::ITensor, right_A::ITensor, 
     return AA
 end
 
-function makeAncillaryIs(A::PEPS, L::Environments, R::Environments, col::Int)
+function makeAncillaryIs(A::fPEPS, L::Environments, R::Environments, col::Int)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
@@ -26,7 +26,7 @@ function makeAncillaryIs(A::PEPS, L::Environments, R::Environments, col::Int)
     return Iabove
 end
 
-function makeAncillaryIsBelow(A::PEPS, L::Environments, R::Environments, col::Int)
+function makeAncillaryIsBelow(A::fPEPS, L::Environments, R::Environments, col::Int)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
@@ -38,7 +38,7 @@ function makeAncillaryIsBelow(A::PEPS, L::Environments, R::Environments, col::In
     return cumprod(AAs)
 end
 
-function updateAncillaryIs(A::PEPS, Ibelow::Vector{ITensor}, L::Environments, R::Environments, row::Int, col::Int )
+function updateAncillaryIs(A::fPEPS, Ibelow::Vector{ITensor}, L::Environments, R::Environments, row::Int, col::Int )
     Ny, Nx  = size(A)
     is_cu  = is_gpu(A) 
     dummy   = is_cu   ? cuITensor(1.0)  : ITensor(1.0) 
@@ -51,7 +51,7 @@ function updateAncillaryIs(A::PEPS, Ibelow::Vector{ITensor}, L::Environments, R:
     return Ibelow
 end
 
-function makeAncillaryFs(A::PEPS, L::Environments, R::Environments, H, col::Int)
+function makeAncillaryFs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
@@ -70,7 +70,7 @@ function makeAncillaryFs(A::PEPS, L::Environments, R::Environments, H, col::Int)
     return Fabove
 end
 
-function updateAncillaryFs(A::PEPS, Fbelow, Ibelow::Vector{ITensor}, L::Environments, R::Environments, H, row::Int, col::Int)
+function updateAncillaryFs(A::fPEPS, Fbelow, Ibelow::Vector{ITensor}, L::Environments, R::Environments, H, row::Int, col::Int)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
@@ -94,7 +94,7 @@ function updateAncillaryFs(A::PEPS, Fbelow, Ibelow::Vector{ITensor}, L::Environm
     return Fbelow
 end
 
-function makeAncillaryVs(A::PEPS, L::Environments, R::Environments, H, col::Int)
+function makeAncillaryVs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
@@ -116,7 +116,7 @@ function makeAncillaryVs(A::PEPS, L::Environments, R::Environments, H, col::Int)
     return Vabove
 end
 
-function makeAncillaryVsBelow(A::PEPS, L::Environments, R::Environments, H, col::Int)
+function makeAncillaryVsBelow(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
@@ -138,7 +138,7 @@ function makeAncillaryVsBelow(A::PEPS, L::Environments, R::Environments, H, col:
     return Vbelow
 end
 
-function updateAncillaryVs(A::PEPS, Vbelow, Ibelow::Vector{ITensor}, L::Environments, R::Environments, H, row::Int, col::Int)
+function updateAncillaryVs(A::fPEPS, Vbelow, Ibelow::Vector{ITensor}, L::Environments, R::Environments, H, row::Int, col::Int)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
@@ -166,7 +166,7 @@ function updateAncillaryVs(A::PEPS, Vbelow, Ibelow::Vector{ITensor}, L::Environm
     return Vbelow
 end
 
-function makeAncillarySide(A::PEPS, EnvIP::Environments, EnvIdent::Environments, H, col::Int, side::Symbol)
+function makeAncillarySide(A::fPEPS, EnvIP::Environments, EnvIdent::Environments, H, col::Int, side::Symbol)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     col_site_inds = [findindex(x, "Site") for x in A[:, col]]
@@ -190,7 +190,7 @@ function makeAncillarySide(A::PEPS, EnvIP::Environments, EnvIdent::Environments,
     return Sabove
 end
 
-function makeAncillarySideBelow(A::PEPS, EnvIP::Environments, EnvIdent::Environments, H, col::Int, side::Symbol)
+function makeAncillarySideBelow(A::fPEPS, EnvIP::Environments, EnvIdent::Environments, H, col::Int, side::Symbol)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
     col_site_inds = [findindex(x, "Site") for x in A[:, col]]
@@ -214,7 +214,7 @@ function makeAncillarySideBelow(A::PEPS, EnvIP::Environments, EnvIdent::Environm
     return Sbelow
 end
 
-function updateAncillarySide(A::PEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::Environments, EnvIdent::Environments, H, row::Int, col::Int, side::Symbol)
+function updateAncillarySide(A::fPEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::Environments, EnvIdent::Environments, H, row::Int, col::Int, side::Symbol)
     Ny, Nx   = size(A)
     is_cu    = is_gpu(A) 
     col_site_inds = [findindex(x, "Site") for x in A[:, col]]

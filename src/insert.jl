@@ -1,6 +1,6 @@
 include("peps_util.jl")
 
-function reindexA(A::PEPS, new_A::PEPS)
+function reindexA(A::fPEPS, new_A::fPEPS)
     Ny, Nx   = size(new_A)
     midpoint = div(Nx, 2)
     old_column = Vector{Int}(undef, Nx)
@@ -44,7 +44,7 @@ function reindexA(A::PEPS, new_A::PEPS)
     return new_A
 end
 
-function InsertTensors(A::PEPS, Rs::Vector{Environments}, Ls::Vector{Environments}, H; kwargs...)
+function InsertTensors(A::fPEPS, Rs::Vector{Environments}, Ls::Vector{Environments}, H; kwargs...)
     maxdim      = get(kwargs, :maxdim, 1)
     Ny, Nx      = size(A)
     midpoint    = div(Nx, 2)
@@ -58,7 +58,7 @@ function InsertTensors(A::PEPS, Rs::Vector{Environments}, Ls::Vector{Environment
     oldH = deepcopy(H)
     Ar = deepcopy(A[:, midpoint + 1])
     Al = deepcopy(A[:, midpoint])
-    new_A = PEPS(Nx+2, Ny, hcat(deepcopy(A[:, 1:midpoint]), Ar, Al, deepcopy(A[:, midpoint+1:Nx])))
+    new_A = fPEPS(Nx+2, Ny, hcat(deepcopy(A[:, 1:midpoint]), Ar, Al, deepcopy(A[:, midpoint+1:Nx])))
     new_A = reindexA(A, new_A)
     A     = new_A
     Hr = H[:, midpoint + 1]
@@ -138,7 +138,7 @@ function InsertTensors(A::PEPS, Rs::Vector{Environments}, Ls::Vector{Environment
     return A, H
 end
 
-function rightwardSweepToInsert(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; kwargs...)
+function rightwardSweepToInsert(A::fPEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; kwargs...)
     simple_update_cutoff = get(kwargs, :simple_update_cutoff, 4)
     Ny, Nx = size(A)
     dummyI = MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
@@ -189,7 +189,7 @@ function rightwardSweepToInsert(A::PEPS, Ls::Vector{Environments}, Rs::Vector{En
     return A, Ls, Rs
 end
 
-function rightwardSweepFromInsert(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; kwargs...)
+function rightwardSweepFromInsert(A::fPEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; kwargs...)
     simple_update_cutoff = get(kwargs, :simple_update_cutoff, 4)
     Ny, Nx = size(A)
     dummyI = MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
@@ -235,7 +235,7 @@ function rightwardSweepFromInsert(A::PEPS, Ls::Vector{Environments}, Rs::Vector{
     return A, Ls, Rs
 end
 
-function rightwardSweepFromInsert(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; kwargs...)
+function rightwardSweepFromInsert(A::fPEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; kwargs...)
     simple_update_cutoff = get(kwargs, :simple_update_cutoff, 4)
     Ny, Nx = size(A)
     dummyI = MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
@@ -275,7 +275,7 @@ function rightwardSweepFromInsert(A::PEPS, Ls::Vector{Environments}, Rs::Vector{
     return A, Ls, Rs
 end
 
-function doSweepsInsert(A::PEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; mindim::Int=1, maxdim::Int=1, simple_update_cutoff::Int=4, sweep_start::Int=1, sweep_count::Int=10, cutoff::Float64=0., insert_interval::Int=20)
+function doSweepsInsert(A::fPEPS, Ls::Vector{Environments}, Rs::Vector{Environments}, H; mindim::Int=1, maxdim::Int=1, simple_update_cutoff::Int=4, sweep_start::Int=1, sweep_count::Int=10, cutoff::Float64=0., insert_interval::Int=20)
     Ny, Nx      = size(A)
     sweep_width = Nx
     for sweep in sweep_start:sweep_count

@@ -1,18 +1,12 @@
-using ITensors, ITensorsGPU
-using CuArrays
-using Random, Logging, LinearAlgebra, DelimitedFiles
-
-import ITensors: tensors
-
-mutable struct PEPS
+mutable struct fPEPS
     Nx::Int
     Ny::Int
     A_::AbstractMatrix{ITensor}
 
-    PEPS() = new(0, 0, Matrix{ITensor}(),0,0)
+    fPEPS() = new(0, 0, Matrix{ITensor}(),0,0)
 
-    PEPS(Nx::Int, Ny::Int, A::Matrix{ITensor}) = new(Nx, Ny, A)
-    function PEPS(sites, lattice::Lattice, Nx::Int, Ny::Int; mindim::Int=1, is_gpu::Bool=false)
+    fPEPS(Nx::Int, Ny::Int, A::Matrix{ITensor}) = new(Nx, Ny, A)
+    function fPEPS(sites, lattice::Lattice, Nx::Int, Ny::Int; mindim::Int=1, is_gpu::Bool=false)
         p           = Matrix{ITensor}(undef, Ny, Nx)
         right_links = [ Index(mindim, "Link,c$j,r$i,r") for i in 1:Ny, j in 1:Nx ]
         up_links    = [ Index(mindim, "Link,c$j,r$i,u") for i in 1:Ny, j in 1:Nx ]
@@ -45,7 +39,7 @@ mutable struct PEPS
         new(Nx, Ny, p)
     end
 end
-Base.eltype(A::PEPS) = eltype(A.A_[1,1])
+Base.eltype(A::fPEPS) = eltype(A.A_[1,1])
 
 function cudelt(left::Index, right::Index)
     d_data   = CuArrays.zeros(Float64, ITensors.dim(left), ITensors.dim(right))
@@ -63,9 +57,9 @@ function mydelt(left::Index, right::Index)
     return delt
 end
 
-function checkerboardPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
+function checkerboardfPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
     lattice = square_lattice(Nx, Ny,yperiodic=false)
-    A = PEPS(sites, lattice, Nx, Ny, mindim=mindim)
+    A = fPEPS(sites, lattice, Nx, Ny, mindim=mindim)
     @inbounds for ii ∈ eachindex(sites)
         row = div(ii-1, Nx) + 1
         col = mod(ii-1, Nx) + 1
@@ -82,9 +76,9 @@ function checkerboardPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
     return A
 end
 
-function randomPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
-    lattice = squareLattice(Nx,Ny,yperiodic=false)
-    A = PEPS(sites, lattice, Nx, Ny, mindim=mindim)
+function randomfPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
+    lattice = square_lattice(Nx,Ny,yperiodic=false)
+    A = fPEPS(sites, lattice, Nx, Ny, mindim=mindim)
     @inbounds for ii ∈ eachindex(sites)
         randn!(A[ii])
         normalize!(A[ii])
@@ -92,7 +86,7 @@ function randomPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
     return A
 end
 
-is_gpu(A::PEPS)    = all(is_gpu.(A[:,:]))
+is_gpu(A::fPEPS)    = all(is_gpu.(A[:,:]))
 is_gpu(A::ITensor) = (data(store(A)) isa CuArray)
 
 include("environments.jl")
@@ -101,9 +95,9 @@ include("gauge.jl")
 include("observables.jl")
 include("hamiltonians.jl")
 
-function randomCuPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
-    lattice = squareLattice(Nx,Ny,yperiodic=false)
-    A = PEPS(sites, lattice, Nx, Ny; mindim=mindim, is_gpu=true)
+function randomCufPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
+    lattice = square_lattice(Nx,Ny,yperiodic=false)
+    A = fPEPS(sites, lattice, Nx, Ny; mindim=mindim, is_gpu=true)
     @inbounds for ii ∈ eachindex(sites)
         randn!(A[ii])
         normalize!(A[ii])
@@ -111,44 +105,46 @@ function randomCuPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
     return A
 end
 
-function cuPEPS(A::PEPS)
-    cA = copy(A)
+function cufPEPS(A::fPEPS)
+    Ny, Nx = size(A)
+    cA     = similar(A)
     @inbounds for i in 1:Ny, j in 1:Nx
         cA[i, j] = cuITensor(A[i, j])
     end
     return cA
 end
 
-function Base.collect(cA::PEPS)
-    A = copy(cA)
+function Base.collect(cA::fPEPS)
+    Ny, Nx = size(A)
+    A = similar(cA)
     @inbounds for i in 1:Ny, j in 1:Nx
         A[i, j] = collect(cA[i, j])
     end
     return A
 end
 
-tensors(A::PEPS)   = A.A_
-Base.size(A::PEPS) = (A.Ny, A.Nx)
+tensors(A::fPEPS)   = A.A_
+Base.size(A::fPEPS) = (A.Ny, A.Nx)
 
-Base.getindex(A::PEPS, i::Integer, j::Integer) = getindex(tensors(A), i, j)::ITensor
-Base.getindex(A::PEPS, ::Colon,    j::Integer) = getindex(tensors(A), :, j)::Vector{ITensor}
-Base.getindex(A::PEPS, i::Integer, ::Colon)    = getindex(tensors(A), i, :)::Vector{ITensor}
-Base.getindex(A::PEPS, ::Colon,    j::UnitRange{Int}) = getindex(tensors(A), :, j)::Matrix{ITensor}
-Base.getindex(A::PEPS, i::UnitRange{Int}, ::Colon)    = getindex(tensors(A), i, :)::Matrix{ITensor}
-Base.getindex(A::PEPS, ::Colon, ::Colon)       = getindex(tensors(A), :, :)::Matrix{ITensor}
-Base.getindex(A::PEPS, i::Integer)             = getindex(tensors(A), i)::ITensor
+Base.getindex(A::fPEPS, i::Integer, j::Integer) = getindex(tensors(A), i, j)::ITensor
+Base.getindex(A::fPEPS, ::Colon,    j::Integer) = getindex(tensors(A), :, j)::Vector{ITensor}
+Base.getindex(A::fPEPS, i::Integer, ::Colon)    = getindex(tensors(A), i, :)::Vector{ITensor}
+Base.getindex(A::fPEPS, ::Colon,    j::UnitRange{Int}) = getindex(tensors(A), :, j)::Matrix{ITensor}
+Base.getindex(A::fPEPS, i::UnitRange{Int}, ::Colon)    = getindex(tensors(A), i, :)::Matrix{ITensor}
+Base.getindex(A::fPEPS, ::Colon, ::Colon)       = getindex(tensors(A), :, :)::Matrix{ITensor}
+Base.getindex(A::fPEPS, i::Integer)             = getindex(tensors(A), i)::ITensor
 
-Base.setindex!(A::PEPS, val::ITensor, i::Integer, j::Integer)       = setindex!(tensors(A), val, i, j)
-Base.setindex!(A::PEPS, vals::Vector{ITensor}, ::Colon, j::Integer) = setindex!(tensors(A), vals, :, j)
-Base.setindex!(A::PEPS, vals::Vector{ITensor}, i::Integer, ::Colon) = setindex!(tensors(A), vals, i, :)
-Base.setindex!(A::PEPS, vals::Matrix{ITensor}, ::Colon, j::UnitRange{Int}) = setindex!(tensors(A), vals, :, j)
-Base.setindex!(A::PEPS, vals::Matrix{ITensor}, i::UnitRange{Int}, ::Colon) = setindex!(tensors(A), vals, i, :)
+Base.setindex!(A::fPEPS, val::ITensor, i::Integer, j::Integer)       = setindex!(tensors(A), val, i, j)
+Base.setindex!(A::fPEPS, vals::Vector{ITensor}, ::Colon, j::Integer) = setindex!(tensors(A), vals, :, j)
+Base.setindex!(A::fPEPS, vals::Vector{ITensor}, i::Integer, ::Colon) = setindex!(tensors(A), vals, i, :)
+Base.setindex!(A::fPEPS, vals::Matrix{ITensor}, ::Colon, j::UnitRange{Int}) = setindex!(tensors(A), vals, :, j)
+Base.setindex!(A::fPEPS, vals::Matrix{ITensor}, i::UnitRange{Int}, ::Colon) = setindex!(tensors(A), vals, i, :)
 
-Base.copy(A::PEPS)    = PEPS(A.Nx, A.Ny, copy(tensors(A)))
-Base.similar(A::PEPS) = PEPS(A.Nx, A.Ny, similar(tensors(A)))
+Base.copy(A::fPEPS)    = fPEPS(A.Nx, A.Ny, copy(tensors(A)))
+Base.similar(A::fPEPS) = fPEPS(A.Nx, A.Ny, similar(tensors(A)))
 
-function Base.show(io::IO, A::PEPS)
-  print(io,"PEPS")
+function Base.show(io::IO, A::fPEPS)
+  print(io,"fPEPS")
   (size(A)[1] > 0 && size(A)[2] > 0) && print(io,"\n")
   @inbounds for i in 1:A.Nx, j in 1:A.Ny
       println(io,"$i $j $(A[i,j])")
@@ -174,7 +170,7 @@ function spinI(s::Index; is_gpu::Bool=false)::ITensor
 end
 
 function combine(Aorig::ITensor, Anext::ITensor, tags::String)::ITensor
-    ci        = commonindex(Aorig, Anext)
+    ci        = commonind(Aorig, Anext)
     cmb, cmbi = combiner(IndexSet(ci, prime(ci)), tags=tags)
     return cmb
 end
@@ -188,7 +184,7 @@ function reconnect(combiner_ind::Index, environment::ITensor)
     return new_combiner
 end
 
-function buildN(A::PEPS, 
+function buildN(A::fPEPS, 
                 L::Environments, 
                 R::Environments, 
                 IEnvs, 
@@ -205,12 +201,12 @@ function buildN(A::PEPS,
         workingN *= IEnvs[:above][end - row]
     end
     if col > 1
-        ci = commonindex(A[row, col], A[row, col-1])
+        ci = commonind(A[row, col], A[row, col-1])
         workingN *= multiply_side_ident(A[row, col], ci, copy(L.I[row])) 
     end
     workingN *= ϕ
     if col < Nx
-        ci = commonindex(A[row, col], A[row, col+1])
+        ci = commonind(A[row, col], A[row, col+1])
         workingN *= multiply_side_ident(A[row, col], ci, copy(R.I[row])) 
     end
     return workingN
@@ -224,7 +220,7 @@ function multiply_side_ident(A::ITensor, ci::Index, side_I::ITensor)
     return side_I * acmb
 end
 
-function nonWorkRow(A::PEPS, 
+function nonWorkRow(A::fPEPS, 
                     L::Environments, 
                     R::Environments, 
                     H::Operator, 
@@ -243,19 +239,19 @@ function nonWorkRow(A::PEPS,
     op_ind = findfirst( x -> x == row, op_rows)
     AA = A[row, col] * op * dag(A[row, col])'
     if col > 1
-        ci = commonindex(A[row, col], A[row, col-1])
+        ci = commonind(A[row, col], A[row, col-1])
         msi = multiply_side_ident(A[row, col], ci, L.I[row])
         AA *= msi
     end
     if col < Nx
-        ci = commonindex(A[row, col], A[row, col+1])
+        ci = commonind(A[row, col], A[row, col+1])
         msi = multiply_side_ident(A[row, col], ci, R.I[row])
         AA *= msi 
     end
     return AA
 end
 
-function sum_rows_in_col(A::PEPS, 
+function sum_rows_in_col(A::fPEPS, 
                          L::Environments, 
                          R::Environments, 
                          H::Operator, 
@@ -291,12 +287,12 @@ function sum_rows_in_col(A::PEPS,
         Hterm = IA
         Hterm *= nonWorkRow(A, L, R, H, op_row_b, col)
         if col > 1
-            ci  = commonindex(A[row, col], A[row, col-1])
+            ci  = commonind(A[row, col], A[row, col-1])
             msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
             Hterm *= msi 
         end
         if col < Nx
-            ci  = commonindex(A[row, col], A[row, col+1])
+            ci  = commonind(A[row, col], A[row, col+1])
             msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
             Hterm *= msi
         end
@@ -305,12 +301,12 @@ function sum_rows_in_col(A::PEPS,
         Hterm = IB
         Hterm *= nonWorkRow(A, L, R, H, op_row_a, col)
         if col > 1
-            ci  = commonindex(A[row, col], A[row, col-1])
+            ci  = commonind(A[row, col], A[row, col-1])
             msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
             Hterm *= msi 
         end
         if col < Nx
-            ci  = commonindex(A[row, col], A[row, col+1])
+            ci  = commonind(A[row, col], A[row, col+1])
             msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
             Hterm *= msi
         end
@@ -325,7 +321,7 @@ function sum_rows_in_col(A::PEPS,
     return Hterm
 end
 
-function buildHIedge(A::PEPS, 
+function buildHIedge(A::fPEPS, 
                      E::Environments, 
                      row::Int, 
                      col::Int, 
@@ -338,7 +334,7 @@ function buildHIedge(A::PEPS,
     next_col = side == :left ? 2 : Nx - 1
     @inbounds for work_row in 1:row-1
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        ci = commonindex(A[work_row, col], A[work_row, next_col])
+        ci = commonind(A[work_row, col], A[work_row, next_col])
         cmb = findindex(E.I[work_row], "Site")
         acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
         replaceindex!(acmb, acmbi, cmb)
@@ -346,7 +342,7 @@ function buildHIedge(A::PEPS,
         HI *= AA * E.I[work_row]
         IH *= E.H[work_row] * AA
     end
-    ci  = commonindex(A[row, col], A[row, next_col])
+    ci  = commonind(A[row, col], A[row, next_col])
     cmb = findindex(E.I[row], "Site")
     acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
     replaceindex!(acmb, acmbi, cmb)
@@ -360,7 +356,7 @@ function buildHIedge(A::PEPS,
     IH *= E.H[row] * acmb
     @inbounds for work_row in row+1:Ny
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        ci = commonindex(A[work_row, col], A[work_row, next_col])
+        ci = commonind(A[work_row, col], A[work_row, next_col])
         cmb = findindex(E.I[work_row], "Site")
         acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
         replaceindex!(acmb, acmbi, cmb)
@@ -374,7 +370,7 @@ function buildHIedge(A::PEPS,
     return (IH,)
 end
 
-function buildHIs(A::PEPS, 
+function buildHIs(A::fPEPS, 
                   L::Environments, 
                   R::Environments, 
                   row::Int, 
@@ -392,8 +388,8 @@ function buildHIs(A::PEPS,
     IHR   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     @inbounds for work_row in 1:row-1
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        lci = commonindex(A[work_row, col], A[work_row, col-1])
-        rci = commonindex(A[work_row, col], A[work_row, col+1])
+        lci = commonind(A[work_row, col], A[work_row, col-1])
+        rci = commonind(A[work_row, col], A[work_row, col+1])
         lcmb = findindex(L.I[work_row], "Site")
         rcmb = findindex(R.I[work_row], "Site")
         lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
@@ -405,8 +401,8 @@ function buildHIs(A::PEPS,
         HLI_b *= L.H[work_row] * AA * R.I[work_row]
         IHR_b *= L.I[work_row] * AA * R.H[work_row]
     end
-    lci = commonindex(A[row, col], A[row, col-1])
-    rci = commonindex(A[row, col], A[row, col+1])
+    lci = commonind(A[row, col], A[row, col-1])
+    rci = commonind(A[row, col], A[row, col+1])
     lcmb = findindex(L.I[row], "Site")
     rcmb = findindex(R.I[row], "Site")
     lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
@@ -419,8 +415,8 @@ function buildHIs(A::PEPS,
     IHR  *= ϕ
     @inbounds for work_row in reverse(row+1:Ny)
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        lci = commonindex(A[work_row, col], A[work_row, col-1])
-        rci = commonindex(A[work_row, col], A[work_row, col+1])
+        lci = commonind(A[work_row, col], A[work_row, col-1])
+        rci = commonind(A[work_row, col], A[work_row, col+1])
         lcmb = findindex(L.I[work_row], "Site")
         rcmb = findindex(R.I[work_row], "Site")
         lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
@@ -447,7 +443,7 @@ function buildHIs(A::PEPS,
     return (HLI, IHR)
 end
 
-function verticalTerms(A::PEPS, 
+function verticalTerms(A::fPEPS, 
                        L::Environments, 
                        R::Environments, 
                        AI, 
@@ -476,13 +472,13 @@ function verticalTerms(A::PEPS,
             end
             thisVert *= V
             if col > 1
-                ci = commonindex(A[row, col], A[row, col-1])
+                ci = commonind(A[row, col], A[row, col-1])
                 msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
                 thisVert *= msi
             end
             thisVert *= ϕ
             if col < Nx
-                ci = commonindex(A[row, col], A[row, col+1])
+                ci = commonind(A[row, col], A[row, col+1])
                 msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
                 thisVert *= msi 
             end
@@ -501,24 +497,24 @@ function verticalTerms(A::PEPS,
             op_b = replaceindex!(op_b, H[opcode].site_ind', sB')
             thisVert = AIH
             if col > 1
-                ci  = commonindex(A[op_row_b, col], A[op_row_b, col-1])
+                ci  = commonind(A[op_row_b, col], A[op_row_b, col-1])
                 msi = multiply_side_ident(A[op_row_b, col], ci, copy(L.I[op_row_b]))
                 thisVert *= msi 
             end
             thisVert *= A[op_row_b, col] * op_b * dag(A[op_row_b, col])'
             if col < Nx
-                ci  = commonindex(A[op_row_b, col], A[op_row_b, col+1])
+                ci  = commonind(A[op_row_b, col], A[op_row_b, col+1])
                 msi = multiply_side_ident(A[op_row_b, col], ci, copy(R.I[op_row_b]))
                 thisVert *= msi
             end
             if col > 1
-                ci  = commonindex(A[op_row_a, col], A[op_row_a, col-1])
+                ci  = commonind(A[op_row_a, col], A[op_row_a, col-1])
                 msi = multiply_side_ident(A[op_row_a, col], ci, copy(L.I[op_row_a]))
                 thisVert *= msi 
             end
             thisVert *= ϕ
             if col < Nx
-                ci  = commonindex(A[op_row_a, col], A[op_row_a, col+1])
+                ci  = commonind(A[op_row_a, col], A[op_row_a, col+1])
                 msi = multiply_side_ident(A[op_row_a, col], ci, copy(R.I[op_row_a]))
                 thisVert *= msi
             end
@@ -531,12 +527,12 @@ function verticalTerms(A::PEPS,
             AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
             thisVert = AIL
             if col > 1
-                ci  = commonindex(A[op_row_a, col], A[op_row_a, col-1])
+                ci  = commonind(A[op_row_a, col], A[op_row_a, col-1])
                 msi = multiply_side_ident(A[op_row_a, col], ci, copy(L.I[op_row_a]))
                 thisVert *= msi 
             end
             if col < Nx
-                ci  = commonindex(A[op_row_a, col], A[op_row_a, col+1])
+                ci  = commonind(A[op_row_a, col], A[op_row_a, col+1])
                 msi = multiply_side_ident(A[op_row_a, col], ci, copy(R.I[op_row_a]))
                 thisVert *= msi
             end
@@ -548,13 +544,13 @@ function verticalTerms(A::PEPS,
             op_b = replaceindex!(op_b, H[opcode].site_ind', sB')
             thisVert *= A[op_row_a, col] * op_a * dag(A[op_row_a, col])'
             if col > 1
-                ci  = commonindex(A[op_row_b, col], A[op_row_b, col-1])
+                ci  = commonind(A[op_row_b, col], A[op_row_b, col-1])
                 msi = multiply_side_ident(A[op_row_b, col], ci, copy(L.I[op_row_b]))
                 thisVert *= msi 
             end
             thisVert *= ϕ
             if col < Nx
-                ci  = commonindex(A[op_row_b, col], A[op_row_b, col+1])
+                ci  = commonind(A[op_row_b, col], A[op_row_b, col+1])
                 msi = multiply_side_ident(A[op_row_b, col], ci, copy(R.I[op_row_b]))
                 thisVert *= msi
             end
@@ -570,7 +566,7 @@ function verticalTerms(A::PEPS,
     return vTerms
 end
 
-function fieldTerms(A::PEPS, 
+function fieldTerms(A::fPEPS, 
                     L::Environments, 
                     R::Environments, 
                     AI, 
@@ -598,12 +594,12 @@ function fieldTerms(A::PEPS,
             end
             thisField *= F
             if col > 1
-                ci = commonindex(A[row, col], A[row, col-1])
+                ci = commonind(A[row, col], A[row, col-1])
                 thisField *= multiply_side_ident(A[row, col], ci, copy(L.I[row]))
             end
             thisField *= ϕ
             if col < Nx
-                ci = commonindex(A[row, col], A[row, col+1])
+                ci = commonind(A[row, col], A[row, col+1])
                 thisField *= multiply_side_ident(A[row, col], ci, copy(R.I[row]))
             end
             thisField *= I
@@ -615,13 +611,13 @@ function fieldTerms(A::PEPS,
             AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
             thisField = AIL
             if col > 1
-                ci  = commonindex(A[row, col], A[row, col-1])
+                ci  = commonind(A[row, col], A[row, col-1])
                 msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
                 thisField *= msi 
             end
             thisField *= ϕ
             if col < Nx
-                ci  = commonindex(A[row, col], A[row, col+1])
+                ci  = commonind(A[row, col], A[row, col+1])
                 msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
                 thisField *= msi
             end
@@ -639,7 +635,7 @@ function fieldTerms(A::PEPS,
     return fTerms
 end
 
-function connectLeftTerms(A::PEPS, 
+function connectLeftTerms(A::fPEPS, 
                           L::Environments, 
                           R::Environments, 
                           AI, AL, H, 
@@ -670,7 +666,7 @@ function connectLeftTerms(A::PEPS,
             thisHori *= L.InProgress[row, opcode]
             thisHori *= ϕ
             if col < Nx
-                ci = commonindex(A[row, col], A[row, col+1])
+                ci = commonind(A[row, col], A[row, col+1])
                 thisHori *= multiply_side_ident(A[row, col], ci, copy(R.I[row]))
             end
             thisHori *= I
@@ -685,7 +681,7 @@ function connectLeftTerms(A::PEPS,
                 thisHori *= AL[:above][opcode][end - high_row + 1]
             end
             if col < Nx
-                ci = commonindex(A[row, col], A[row, col+1])
+                ci = commonind(A[row, col], A[row, col+1])
                 thisHori *= multiply_side_ident(A[row, col], ci, R.I[row])
             end
             uih = uniqueinds(thisHori, L.InProgress[row, opcode])
@@ -701,7 +697,7 @@ function connectLeftTerms(A::PEPS,
     return lTerms
 end
 
-function connectRightTerms(A::PEPS, 
+function connectRightTerms(A::fPEPS, 
                            L::Environments, 
                            R::Environments, 
                            AI, AR, H, 
@@ -732,7 +728,7 @@ function connectRightTerms(A::PEPS,
             thisHori *= R.InProgress[row, opcode]
             thisHori *= ϕ
             if col > 1
-                ci = commonindex(A[row, col], A[row, col-1])
+                ci = commonind(A[row, col], A[row, col-1])
                 thisHori *= multiply_side_ident(A[row, col], ci, copy(L.I[row]))
             end
             thisHori *= I
@@ -747,7 +743,7 @@ function connectRightTerms(A::PEPS,
                 thisHori *= AR[:above][opcode][end - high_row + 1]
             end
             if col > 1
-                ci = commonindex(A[row, col], A[row, col-1])
+                ci = commonind(A[row, col], A[row, col-1])
                 thisHori *= multiply_side_ident(A[row, col], ci, L.I[row])
             end
             thisHori *= R.InProgress[row, opcode]
@@ -761,7 +757,7 @@ function connectRightTerms(A::PEPS,
     return rTerms
 end
 
-function buildLocalH(A::PEPS, 
+function buildLocalH(A::fPEPS, 
                      L::Environments, R::Environments, 
                      AncEnvs, H, 
                      row::Int, col::Int, 
@@ -861,21 +857,21 @@ function buildLocalH(A::PEPS,
     return Hs, N
 end
 
-function intraColumnGauge(A::PEPS, col::Int; kwargs...)::PEPS
+function intraColumnGauge(A::fPEPS, col::Int; kwargs...)::fPEPS
     Ny, Nx = size(A)
     @inbounds for row in reverse(2:Ny)
         @debug "\tBeginning intraColumnGauge for col $col row $row"
         cmb_is   = IndexSet(findindex(A[row, col], "Site"))
         if col > 1
-            cmb_is = IndexSet(cmb_is, commonindex(A[row, col], A[row, col - 1]))
+            cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col - 1]))
         end
         if col < Nx
-            cmb_is = IndexSet(cmb_is, commonindex(A[row, col], A[row, col + 1]))
+            cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col + 1]))
         end
         cmb, ci = combiner(cmb_is, tags="CMB")
         Lis     = IndexSet(ci) #cmb_is
         if row < Ny 
-            Lis = IndexSet(Lis, commonindex(A[row, col], A[row + 1, col]))
+            Lis = IndexSet(Lis, commonind(A[row, col], A[row + 1, col]))
         end
         Ac = A[row, col]*cmb
         U, S, V = svd(Ac, Lis; kwargs...)
@@ -885,7 +881,7 @@ function intraColumnGauge(A::PEPS, col::Int; kwargs...)::PEPS
     return A
 end
 
-function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
+function simpleUpdate(A::fPEPS, col::Int, next_col::Int, H; kwargs...)::fPEPS
     do_side::Bool = get(kwargs, :do_side, true)
     τ::Float64    = get(kwargs, :tau, -0.1)
     Ny, Nx = size(A)
@@ -896,7 +892,7 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
             nhori_col  = next_col < col ? col : next_col
             si_a       = findindex(A[row, col], "Site")
             si_b       = findindex(A[row, next_col], "Site")
-            ci         = commonindex(A[row, col], A[row, next_col])
+            ci         = commonind(A[row, col], A[row, next_col])
             min_dim    = ITensors.dim(ci)
             Ua, Sa, Va = svd(A[row, col], si_a, ci; mindim=min_dim, kwargs...)
             Ub, Sb, Vb = svd(A[row, next_col], si_b, ci; mindim=min_dim, kwargs...)
@@ -920,14 +916,14 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
             expiH *= cmb'
              
             bond  = noprime(expiH * Ua * Ub)
-            Uf, Sf, Vf = svd(bond, si_a, commonindex(Ua, Sa); vtags="r,Link,r$row,c$hori_col", mindim=min_dim, kwargs...)
+            Uf, Sf, Vf = svd(bond, si_a, commonind(Ua, Sa); vtags="r,Link,r$row,c$hori_col", mindim=min_dim, kwargs...)
             A[row, col] = Sa * Va * Uf * Sf
             A[row, next_col] = Sb * Vb * Vf
         end
         if row < Ny
             si_a       = findindex(A[row, col], "Site")
             si_b       = findindex(A[row+1, col], "Site")
-            ci         = commonindex(A[row, col], A[row+1, col])
+            ci         = commonind(A[row, col], A[row+1, col])
             min_dim    = ITensors.dim(ci)
             Ua, Sa, Va = svd(A[row, col], si_a, ci; mindim=min_dim, kwargs...)
             Ub, Sb, Vb = svd(A[row+1, col], si_b, ci; mindim=min_dim, kwargs...)
@@ -950,7 +946,7 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
             expiH *= cmb
             expiH *= cmb'
             bond  = noprime(expiH * Ua * Ub)
-            Uf, Sf, Vf = svd(bond, si_a, commonindex(Ua, Sa); vtags="u,Link,r$row,c$col", mindim=min_dim, kwargs...)
+            Uf, Sf, Vf = svd(bond, si_a, commonind(Ua, Sa); vtags="u,Link,r$row,c$col", mindim=min_dim, kwargs...)
             A[row, col] = Sa * Va * Uf * Sf
             A[row+1, col] = Sb * Vb * Vf
         end
@@ -958,7 +954,7 @@ function simpleUpdate(A::PEPS, col::Int, next_col::Int, H; kwargs...)::PEPS
     return A
 end
 
-function buildAncs(A::PEPS, L::Environments, R::Environments, H, col::Int)
+function buildAncs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
@@ -1000,7 +996,7 @@ function buildAncs(A::PEPS, L::Environments, R::Environments, H, col::Int)
     return Ancs
 end
 
-function updateAncs(A::PEPS, 
+function updateAncs(A::fPEPS, 
                     L::Environments, R::Environments, 
                     AncEnvs, H, 
                     row::Int, col::Int)
@@ -1039,7 +1035,7 @@ function updateAncs(A::PEPS,
 end
 
 struct ITensorMap
-  A::PEPS
+  A::fPEPS
   H::Matrix{Vector{Operator}}
   L::Environments
   R::Environments
@@ -1055,7 +1051,7 @@ function (M::ITensorMap)(v::ITensor)
     return noprime(localH)
 end
 
-function optimizeLocalH(A::PEPS, 
+function optimizeLocalH(A::fPEPS, 
                         L::Environments, R::Environments, 
                         AncEnvs, H, 
                         row::Int, col::Int; 
@@ -1088,21 +1084,21 @@ function optimizeLocalH(A::PEPS,
             @debug "\tRestoring intraColumnGauge for col $col row $row"
             cmb_is   = IndexSet(findindex(A[row, col], "Site"))
             if col > 1
-                cmb_is = IndexSet(cmb_is, commonindex(A[row, col], A[row, col - 1]))
+                cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col - 1]))
             end
             if col < Nx
-                cmb_is = IndexSet(cmb_is, commonindex(A[row, col], A[row, col + 1]))
+                cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col + 1]))
             end
             cmb, ci = combiner(cmb_is, tags="CMB")
             Lis     = IndexSet(ci) #cmb_is 
             if row > 1
-                Lis = IndexSet(Lis, commonindex(A[row, col], A[row - 1, col]))
+                Lis = IndexSet(Lis, commonind(A[row, col], A[row - 1, col]))
             end
-            old_ci = commonindex(A[row, col], A[row+1, col])
+            old_ci = commonind(A[row, col], A[row+1, col])
             svdA = new_A*cmb
             Ris = uniqueinds(inds(svdA), Lis) 
             U, S, V = svd(svdA, Ris; kwargs...)
-            new_ci = commonindex(V, S)
+            new_ci = commonind(V, S)
             replaceindex!(V, new_ci, old_ci)
             A[row, col]    = V*cmb 
             newU = S*U*A[row+1, col]
@@ -1112,11 +1108,11 @@ function optimizeLocalH(A::PEPS,
                 nI    = spinI(findindex(A[row+1, col], "Site"); is_gpu=is_cu)
                 newAA = A[row+1, col] * nI * dag(A[row+1, col])'
                 if col > 1
-                    ci     = commonindex(A[row+1, col], A[row+1, col-1])
+                    ci     = commonind(A[row+1, col], A[row+1, col-1])
                     newAA *= multiply_side_ident(A[row+1, col], ci, L.I[row+1])
                 end
                 if col < Nx
-                    ci     = commonindex(A[row+1, col], A[row+1, col+1])
+                    ci     = commonind(A[row+1, col], A[row+1, col+1])
                     newAA *= multiply_side_ident(A[row+1, col], ci, R.I[row+1])
                 end
                 AncEnvs[:I][:above][end - row] = newAA * AncEnvs[:I][:above][end - row - 1]
@@ -1128,7 +1124,7 @@ function optimizeLocalH(A::PEPS,
     return A, AncEnvs
 end
 
-function measureEnergy(A::PEPS, 
+function measureEnergy(A::fPEPS, 
                        L::Environments, R::Environments, 
                        AncEnvs, H, 
                        row::Int, col::Int)::Tuple{Float64, Float64}
@@ -1140,7 +1136,7 @@ function measureEnergy(A::PEPS,
     return real(scalar(initial_N)), real(scalar(initial_E))/real(scalar(initial_N))
 end
 
-function sweepColumn(A::PEPS, 
+function sweepColumn(A::fPEPS, 
                      L::Environments, R::Environments, 
                      H, 
                      col::Int; 
@@ -1169,7 +1165,7 @@ function sweepColumn(A::PEPS,
     return A
 end
 
-function rightwardSweep(A::PEPS, 
+function rightwardSweep(A::fPEPS, 
                         Ls::Vector{Environments}, 
                         Rs::Vector{Environments}, 
                         H; 
@@ -1188,7 +1184,7 @@ function rightwardSweep(A::PEPS,
     leftmost  = sweep_width == Nx ? 1 : midpoint - div(sweep_width, 2)
     if leftmost > 1 
         for row in 1:Ny
-            prev_cmb_r[row] = reconnect(commonindex(A[row, leftmost], A[row, leftmost-1]), Ls[leftmost-1].I[row])
+            prev_cmb_r[row] = reconnect(commonind(A[row, leftmost], A[row, leftmost-1]), Ls[leftmost-1].I[row])
         end
     end
     @inbounds for col in leftmost:rightmost
@@ -1222,7 +1218,7 @@ function rightwardSweep(A::PEPS,
     return A, Ls, Rs
 end
 
-function leftwardSweep(A::PEPS, 
+function leftwardSweep(A::fPEPS, 
                        Ls::Vector{Environments}, 
                        Rs::Vector{Environments}, 
                        H; 
@@ -1241,7 +1237,7 @@ function leftwardSweep(A::PEPS,
     leftmost  = sweep_width == Nx ? 2 : midpoint - div(sweep_width, 2)
     if rightmost < Nx
         for row in 1:Ny
-            prev_cmb_l[row] = reconnect(commonindex(A[row, rightmost], A[row, rightmost+1]), Rs[rightmost+1].I[row])
+            prev_cmb_l[row] = reconnect(commonind(A[row, rightmost], A[row, rightmost+1]), Rs[rightmost+1].I[row])
         end
     end
     @inbounds for col in reverse(leftmost:rightmost)
@@ -1275,7 +1271,7 @@ function leftwardSweep(A::PEPS,
     return A, Ls, Rs
 end
 
-function doSweeps(A::PEPS, 
+function doSweeps(A::fPEPS, 
                   Ls::Vector{Environments}, 
                   Rs::Vector{Environments},
                   H; 
