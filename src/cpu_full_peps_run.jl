@@ -1,8 +1,7 @@
 using Pkg
 Pkg.activate("..")
-using TimerOutputs, Statistics, ArgParse, Distributions
-include("peps_util.jl")
-
+using TimerOutputs, Statistics, ArgParse, Distributions, Logging
+using PEPS, ITensors, ITensorsGPU
 s = ArgParseSettings()
 @add_arg_table! s begin
     "--prefix"
@@ -80,12 +79,12 @@ sites = siteinds("S=1/2",Nx*Ny)
 
 # disallow scalar indexing on GPU, which is very slow 
 #CuArrays.allowscalar(false)
-A = checkerboardPEPS(sites, Nx, Ny, mindim=D)
+A = PEPS.checkerboardfPEPS(sites, Nx, Ny, mindim=D)
 # to the user, these appear as normal ITensors, but they have on-device storage
 # Julia can detect this at runtime and appropriately dispatch to CUTENSOR
 H  = nothing
 if parsed_args["model"] == "XXZ"
-    H  = makeH_XXZ(Nx, Ny, J)
+    H  = PEPS.makeH_XXZ(Nx, Ny, J)
 elseif parsed_args["model"] == "Ising"
     hz = parsed_args["hz"]
     hx = parsed_args["hx"]
@@ -104,7 +103,7 @@ elseif parsed_args["model"] == "Ising"
         dz = Uniform(-hz, hz)
         hz = rand(dz, Ny, Nx)
     end
-    H  = makeCuH_Ising(Nx, Ny, J, hx, hz)
+    H  = PEPS.makeH_Ising(Nx, Ny, J, hx, hz)
 end
 @info "Built A and H"
 # run heaviest functions one time to make Julia compile everything
@@ -112,11 +111,11 @@ end
 Ls = buildLs(A, H; mindim=D, maxdim=D)
 @info "Built first Ls"
 #Rs = buildRs(A, H; mindim=D, maxdim=D)
-Rs = Vector{Environments}(undef, Nx)
+Rs = Vector{PEPS.Environments}(undef, Nx)
 @info "Built first Rs"
 
 # actual profiling run
-A, tS, bytes, gctime, memallocs = @timed doSweeps(A, Ls, Rs, H; mindim=D, maxdim=D, simple_update_cutoff=parsed_args["simple_update_cutoff"], sweep_count=parsed_args["sweep_count"], cutoff=0.0, env_maxdim=χ, do_mag=parsed_args["do_mag"], prefix=parsed_args["prefix"])
+A, tS, bytes, gctime, memallocs = @timed PEPS.doSweeps(A, Ls, Rs, H; mindim=D, maxdim=D, simple_update_cutoff=parsed_args["simple_update_cutoff"], sweep_count=parsed_args["sweep_count"], cutoff=0.0, env_maxdim=χ, do_mag=parsed_args["do_mag"], prefix=parsed_args["prefix"])
 println("Done sweeping GPU $tS")
 flush(stdout)
 flush(io)

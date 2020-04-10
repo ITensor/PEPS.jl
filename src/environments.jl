@@ -17,7 +17,7 @@ function buildEdgeEnvironment(A::fPEPS,
     fake_next_combiners = Vector{ITensor}(undef, Ny)
     fake_prev_combiners = is_cu ? fill(cuITensor(1.0), Ny) : fill(ITensor(1.0), Ny)
     I_mpo, fake_next_combiners, up_combiners = buildNewI(A, col, fake_prev_combiners, side)
-    I_mps          = MPS(Ny, tensors(I_mpo), 0, Ny+1)
+    I_mps          = MPS(Ny, store(I_mpo), 0, Ny+1)
     @debug "Built new I"
     copyto!(next_combiners, fake_next_combiners)
     field_H_terms  = getDirectional(vcat(H[:, col]...), Field)
@@ -25,9 +25,9 @@ function buildEdgeEnvironment(A::fPEPS,
     vHs            = [buildNewVerticals(A, fake_prev_combiners, fake_next_combiners, up_combiners, vert_H_terms[vert_op], col) for vert_op in 1:length(vert_H_terms)]
     @debug "Built new Vs"
     fHs            = [buildNewFields(A, fake_prev_combiners, fake_next_combiners, up_combiners, field_H_terms[field_op], col) for field_op in 1:length(field_H_terms)]
-    Hs             = MPS[MPS(Ny, tensors(H_term), 0, Ny+1) for H_term in vcat(vHs, fHs)]
+    Hs             = MPS[MPS(Ny, store(H_term), 0, Ny+1) for H_term in vcat(vHs, fHs)]
     @inbounds for row in 1:Ny-1
-        ci = linkindex(I_mps, row)
+        ci = linkind(I_mps, row)
         ni = Index(ITensors.dim(ci), "u,Link,c$col,r$row")
         replaceind!(I_mps[row], ci, ni) 
         replaceind!(I_mps[row+1], ci, ni)
@@ -66,7 +66,7 @@ function buildNextEnvironment(A::fPEPS,
     @debug "Built I_mpo"
     copyto!(next_combiners, working_combiner)
     @inbounds for row in 1:Ny-1
-        ci = linkindex(I_mpo, row)
+        ci = linkind(I_mpo, row)
         ni = Index(ITensors.dim(ci), "u,Link,c$col,r$row")
         replaceind!(I_mpo[row], ci, ni) 
         replaceind!(I_mpo[row+1], ci, ni)
@@ -75,8 +75,8 @@ function buildNextEnvironment(A::fPEPS,
     maxdim::Int     = get(kwargs, :maxdim, 1)
     env_maxdim::Int = get(kwargs, :env_maxdim, maxdim)
     @timeit "build new_I and new_H" begin
-        new_I     = applyMPO(I_mpo, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
-        new_H     = applyMPO(I_mpo, prev_Env.H; cutoff=cutoff, maxdim=env_maxdim)
+        new_I     = applympo(I_mpo, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
+        new_H     = applympo(I_mpo, prev_Env.H; cutoff=cutoff, maxdim=env_maxdim)
     end
     @debug "Built new I and H"
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
@@ -98,10 +98,10 @@ function buildNextEnvironment(A::fPEPS,
     end
     @timeit "build new H array" begin
         for (vv, vH) in enumerate(vHs)
-            new_H_mps[1+vv] = applyMPO(vH, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
+            new_H_mps[1+vv] = applympo(vH, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
         end
         for (ff, fH) in enumerate(fHs)
-            new_H_mps[1+length(vHs)+ff] = applyMPO(fH, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
+            new_H_mps[1+length(vHs)+ff] = applympo(fH, prev_Env.I; cutoff=cutoff, maxdim=env_maxdim)
         end
     end
     connect_H    = side == :left ? side_H_terms : hori_H_terms
@@ -254,7 +254,7 @@ function generateNextDanglingBonds(A::fPEPS,
     cutoff::Float64 = get(kwargs, :cutoff, 1e-13)
     maxdim::Int     = get(kwargs, :maxdim, 1)
     env_maxdim::Int = get(kwargs, :env_maxdim, maxdim)
-    result          = applyMPO(in_progress_MPO, Ident; cutoff=cutoff, maxdim=env_maxdim)
+    result          = applympo(in_progress_MPO, Ident; cutoff=cutoff, maxdim=env_maxdim)
     return ITensor[result[row]*next_combiners[row] for row in 1:Ny]
 end
 
@@ -292,13 +292,13 @@ function connectDanglingBonds(A::fPEPS,
     completed_H = MPO(Ny, this_IP, 0, Ny+1)
     if work_row == -1
         dummy_cmbs      = [combiner(commoninds(completed_H[row], in_prog_mps[row]), tags="Site,r$row")[1] for row in 1:Ny]
-        completed_H.A_  = dummy_cmbs .* tensors(completed_H)
-        in_prog_mps.A_  = dummy_cmbs .* tensors(in_prog_mps)
+        completed_H.A_  = dummy_cmbs .* store(completed_H)
+        in_prog_mps.A_  = dummy_cmbs .* store(in_prog_mps)
         cutoff::Float64 = get(kwargs, :cutoff, 1e-13)
         maxdim::Int     = get(kwargs, :maxdim, 1)
         env_maxdim::Int = get(kwargs, :env_maxdim, maxdim)
-        result          = applyMPO(completed_H, in_prog_mps; cutoff=cutoff, maxdim=env_maxdim)
-        return tensors(result)
+        result          = applympo(completed_H, in_prog_mps; cutoff=cutoff, maxdim=env_maxdim)
+        return store(result)
     else
         @inbounds for row in 1:Ny-1
             ci = linkIndex(completed_H, row)
@@ -306,7 +306,7 @@ function connectDanglingBonds(A::fPEPS,
             replaceIndex!(completed_H[row],   ci, ni)
             replaceIndex!(completed_H[row+1], ci, ni)
         end
-        return tensors(completed_H) .* tensors(in_prog_mps)
+        return store(completed_H) .* store(in_prog_mps)
     end
 end
 

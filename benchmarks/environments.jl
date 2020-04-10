@@ -1,14 +1,6 @@
 suite["edge"] = BenchmarkGroup(["identity", "field", "vertical", "horizontal"])
 suite["interior"] = BenchmarkGroup(["identity", "field", "vertical", "connect", "generate"])
 
-Nx = 6
-Ny = 6
-χ  = 4
-D  = 4
-sites = siteinds("S=1/2",Nx*Ny)
-A     = cufPEPS(randomfPEPS(sites, Nx, Ny, mindim=D))
-J     = 1.0
-H     = PEPS.makeCuH_XXZ(Nx, Ny, J)
 next_combiners = Vector{ITensor}(undef, Ny)
 fake_next_combiners = Vector{ITensor}(undef, Ny)
 fake_prev_combiners = fill(cuITensor(1.0), Ny)
@@ -40,7 +32,7 @@ suite["interior"]["identity"] = @benchmarkable PEPS.buildNewI($A, $col, $previou
 I_mpo, working_combiner, up_combiners = PEPS.buildNewI(A, col, previous_combiners, :left)
 copyto!(next_combiners, working_combiner)
 @inbounds for row in 1:Ny-1
-    ci = linkindex(I_mpo, row)
+    ci = linkind(I_mpo, row)
     ni = Index(ITensors.dim(ci), "u,Link,c$col,r$row")
     replaceind!(I_mpo[row], ci, ni)
     replaceind!(I_mpo[row+1], ci, ni)

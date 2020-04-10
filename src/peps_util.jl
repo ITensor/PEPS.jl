@@ -64,7 +64,7 @@ function checkerboardfPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
         row = div(ii-1, Nx) + 1
         col = mod(ii-1, Nx) + 1
         spin_side = isodd(row - 1) ⊻ isodd(col - 1) ? 2 : 1
-        si  = findindex(A[ii], "Site") 
+        si  = firstind(A[ii], "Site") 
         lis = filter(inds(A[ii]), "Link") 
         ivs = [li(1) for li in lis]
         ivs = vcat(ivs, si(spin_side))
@@ -123,25 +123,25 @@ function Base.collect(cA::fPEPS)
     return A
 end
 
-tensors(A::fPEPS)   = A.A_
+store(A::fPEPS)   = A.A_
 Base.size(A::fPEPS) = (A.Ny, A.Nx)
 
-Base.getindex(A::fPEPS, i::Integer, j::Integer) = getindex(tensors(A), i, j)::ITensor
-Base.getindex(A::fPEPS, ::Colon,    j::Integer) = getindex(tensors(A), :, j)::Vector{ITensor}
-Base.getindex(A::fPEPS, i::Integer, ::Colon)    = getindex(tensors(A), i, :)::Vector{ITensor}
-Base.getindex(A::fPEPS, ::Colon,    j::UnitRange{Int}) = getindex(tensors(A), :, j)::Matrix{ITensor}
-Base.getindex(A::fPEPS, i::UnitRange{Int}, ::Colon)    = getindex(tensors(A), i, :)::Matrix{ITensor}
-Base.getindex(A::fPEPS, ::Colon, ::Colon)       = getindex(tensors(A), :, :)::Matrix{ITensor}
-Base.getindex(A::fPEPS, i::Integer)             = getindex(tensors(A), i)::ITensor
+Base.getindex(A::fPEPS, i::Integer, j::Integer) = getindex(store(A), i, j)::ITensor
+Base.getindex(A::fPEPS, ::Colon,    j::Integer) = getindex(store(A), :, j)::Vector{ITensor}
+Base.getindex(A::fPEPS, i::Integer, ::Colon)    = getindex(store(A), i, :)::Vector{ITensor}
+Base.getindex(A::fPEPS, ::Colon,    j::UnitRange{Int}) = getindex(store(A), :, j)::Matrix{ITensor}
+Base.getindex(A::fPEPS, i::UnitRange{Int}, ::Colon)    = getindex(store(A), i, :)::Matrix{ITensor}
+Base.getindex(A::fPEPS, ::Colon, ::Colon)       = getindex(store(A), :, :)::Matrix{ITensor}
+Base.getindex(A::fPEPS, i::Integer)             = getindex(store(A), i)::ITensor
 
-Base.setindex!(A::fPEPS, val::ITensor, i::Integer, j::Integer)       = setindex!(tensors(A), val, i, j)
-Base.setindex!(A::fPEPS, vals::Vector{ITensor}, ::Colon, j::Integer) = setindex!(tensors(A), vals, :, j)
-Base.setindex!(A::fPEPS, vals::Vector{ITensor}, i::Integer, ::Colon) = setindex!(tensors(A), vals, i, :)
-Base.setindex!(A::fPEPS, vals::Matrix{ITensor}, ::Colon, j::UnitRange{Int}) = setindex!(tensors(A), vals, :, j)
-Base.setindex!(A::fPEPS, vals::Matrix{ITensor}, i::UnitRange{Int}, ::Colon) = setindex!(tensors(A), vals, i, :)
+Base.setindex!(A::fPEPS, val::ITensor, i::Integer, j::Integer)       = setindex!(store(A), val, i, j)
+Base.setindex!(A::fPEPS, vals::Vector{ITensor}, ::Colon, j::Integer) = setindex!(store(A), vals, :, j)
+Base.setindex!(A::fPEPS, vals::Vector{ITensor}, i::Integer, ::Colon) = setindex!(store(A), vals, i, :)
+Base.setindex!(A::fPEPS, vals::Matrix{ITensor}, ::Colon, j::UnitRange{Int}) = setindex!(store(A), vals, :, j)
+Base.setindex!(A::fPEPS, vals::Matrix{ITensor}, i::UnitRange{Int}, ::Colon) = setindex!(store(A), vals, i, :)
 
-Base.copy(A::fPEPS)    = fPEPS(A.Nx, A.Ny, copy(tensors(A)))
-Base.similar(A::fPEPS) = fPEPS(A.Nx, A.Ny, similar(tensors(A)))
+Base.copy(A::fPEPS)    = fPEPS(A.Nx, A.Ny, copy(store(A)))
+Base.similar(A::fPEPS) = fPEPS(A.Nx, A.Ny, similar(store(A)))
 
 function Base.show(io::IO, A::fPEPS)
   print(io,"fPEPS")
@@ -176,7 +176,7 @@ function combine(Aorig::ITensor, Anext::ITensor, tags::String)::ITensor
 end
 
 function reconnect(combiner_ind::Index, environment::ITensor)
-    environment_combiner        = findindex(environment, "Site")
+    environment_combiner        = firstind(environment, "Site")
     new_combiner, combined_ind  = combiner(IndexSet(combiner_ind, prime(combiner_ind)), tags="Site")
     combiner_transfer           = δ(combined_ind, environment_combiner)
     #return new_combiner*combiner_transfer
@@ -192,7 +192,7 @@ function buildN(A::fPEPS,
                 col::Int, 
                 ϕ::ITensor)::ITensor
     Ny, Nx   = size(A)
-    N        = spinI(findindex(A[row, col], "Site"); is_gpu=is_gpu(A))
+    N        = spinI(firstind(A[row, col], "Site"); is_gpu=is_gpu(A))
     workingN = N
     if row > 1
         workingN *= IEnvs[:below][row - 1]
@@ -214,9 +214,9 @@ end
 
 
 function multiply_side_ident(A::ITensor, ci::Index, side_I::ITensor)
-    scmb        = findindex(side_I, "Site")
+    scmb        = firstind(side_I, "Site")
     acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
-    replaceindex!(acmb, acmbi, scmb)
+    replaceind!(acmb, acmbi, scmb)
     return side_I * acmb
 end
 
@@ -231,11 +231,11 @@ function nonWorkRow(A::fPEPS,
     is_cu   = is_gpu(A) 
     ops     = deepcopy(H.ops)
     @inbounds for op_ind in 1:length(ops)
-        as = findindex(A[op_rows[op_ind][1][1], col], "Site")
+        as = firstind(A[op_rows[op_ind][1][1], col], "Site")
         ops[op_ind] = replaceindex!(ops[op_ind], H.site_ind, as)
         ops[op_ind] = replaceindex!(ops[op_ind], H.site_ind', as')
     end
-    op = spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+    op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     op_ind = findfirst( x -> x == row, op_rows)
     AA = A[row, col] * op * dag(A[row, col])'
     if col > 1
@@ -276,7 +276,7 @@ function sum_rows_in_col(A::fPEPS,
     op_row_b = H.sites[2][1]
     @inbounds for op_ind in 1:length(ops)
         this_A = A[op_rows[op_ind][1][1], col]
-        as = findindex(this_A, "Site")
+        as = firstind(this_A, "Site")
         ops[op_ind] = replaceindex!(ops[op_ind], H.site_ind, as)
         ops[op_ind] = replaceindex!(ops[op_ind], H.site_ind', as')
     end
@@ -312,7 +312,7 @@ function sum_rows_in_col(A::fPEPS,
         end
         Hterm *= IA
     end
-    op = spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+    op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     op_ind = findfirst( x -> x[1] == row, op_rows)
     if op_ind > 0 
         op = ops[op_ind]
@@ -335,7 +335,7 @@ function buildHIedge(A::fPEPS,
     @inbounds for work_row in 1:row-1
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
         ci = commonind(A[work_row, col], A[work_row, next_col])
-        cmb = findindex(E.I[work_row], "Site")
+        cmb = firstind(E.I[work_row], "Site")
         acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
         replaceindex!(acmb, acmbi, cmb)
         AA *= acmb
@@ -343,10 +343,10 @@ function buildHIedge(A::fPEPS,
         IH *= E.H[work_row] * AA
     end
     ci  = commonind(A[row, col], A[row, next_col])
-    cmb = findindex(E.I[row], "Site")
+    cmb = firstind(E.I[row], "Site")
     acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
     replaceindex!(acmb, acmbi, cmb)
-    op = spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+    op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     op = is_cu ? cuITensor(op) : op
     HI *= ϕ
     IH *= ϕ
@@ -357,7 +357,7 @@ function buildHIedge(A::fPEPS,
     @inbounds for work_row in row+1:Ny
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
         ci = commonind(A[work_row, col], A[work_row, next_col])
-        cmb = findindex(E.I[work_row], "Site")
+        cmb = firstind(E.I[work_row], "Site")
         acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
         replaceindex!(acmb, acmbi, cmb)
         AA *= acmb 
@@ -390,8 +390,8 @@ function buildHIs(A::fPEPS,
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
         lci = commonind(A[work_row, col], A[work_row, col-1])
         rci = commonind(A[work_row, col], A[work_row, col+1])
-        lcmb = findindex(L.I[work_row], "Site")
-        rcmb = findindex(R.I[work_row], "Site")
+        lcmb = firstind(L.I[work_row], "Site")
+        rcmb = firstind(R.I[work_row], "Site")
         lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
         racmb, racmbi = combiner(IndexSet(rci, rci'), tags="Site")
         replaceindex!(lacmb, lacmbi, lcmb)
@@ -403,8 +403,8 @@ function buildHIs(A::fPEPS,
     end
     lci = commonind(A[row, col], A[row, col-1])
     rci = commonind(A[row, col], A[row, col+1])
-    lcmb = findindex(L.I[row], "Site")
-    rcmb = findindex(R.I[row], "Site")
+    lcmb = firstind(L.I[row], "Site")
+    rcmb = firstind(R.I[row], "Site")
     lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
     racmb, racmbi = combiner(IndexSet(rci, rci'), tags="Site")
     replaceindex!(lacmb, lacmbi, lcmb)
@@ -417,8 +417,8 @@ function buildHIs(A::fPEPS,
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
         lci = commonind(A[work_row, col], A[work_row, col-1])
         rci = commonind(A[work_row, col], A[work_row, col+1])
-        lcmb = findindex(L.I[work_row], "Site")
-        rcmb = findindex(R.I[work_row], "Site")
+        lcmb = firstind(L.I[work_row], "Site")
+        rcmb = firstind(R.I[work_row], "Site")
         lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
         racmb, racmbi = combiner(IndexSet(rci, rci'), tags="Site")
         replaceindex!(lacmb, lacmbi, lcmb)
@@ -432,7 +432,7 @@ function buildHIs(A::fPEPS,
     HLI *= HLI_b
     IHR *= IHR_a
     IHR *= IHR_b
-    op   = spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+    op   = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     HLI *= op
     IHR *= op
     AAinds = inds(prime(ϕ))
@@ -483,16 +483,16 @@ function verticalTerms(A::fPEPS,
                 thisVert *= msi 
             end
             thisVert *= I
-            thisVert *= spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+            thisVert *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         elseif row == op_row_a
             low_row  = op_row_a - 1
             high_row = op_row_b
             AIL = low_row > 0 ? AI[:below][low_row] : dummy 
             AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
-            sA   = findindex(A[op_row_a, col], "Site")
+            sA   = firstind(A[op_row_a, col], "Site")
             op_a = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
             op_a = replaceindex!(op_a, H[opcode].site_ind', sA')
-            sB   = findindex(A[op_row_b, col], "Site")
+            sB   = firstind(A[op_row_b, col], "Site")
             op_b = replaceindex!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
             op_b = replaceindex!(op_b, H[opcode].site_ind', sB')
             thisVert = AIH
@@ -536,10 +536,10 @@ function verticalTerms(A::fPEPS,
                 msi = multiply_side_ident(A[op_row_a, col], ci, copy(R.I[op_row_a]))
                 thisVert *= msi
             end
-            sA = findindex(A[op_row_a, col], "Site")
+            sA = firstind(A[op_row_a, col], "Site")
             op_a = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
             op_a = replaceindex!(op_a, H[opcode].site_ind', sA')
-            sB = findindex(A[op_row_b, col], "Site")
+            sB = firstind(A[op_row_b, col], "Site")
             op_b = replaceindex!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
             op_b = replaceindex!(op_b, H[opcode].site_ind', sB')
             thisVert *= A[op_row_a, col] * op_a * dag(A[op_row_a, col])'
@@ -603,7 +603,7 @@ function fieldTerms(A::fPEPS,
                 thisField *= multiply_side_ident(A[row, col], ci, copy(R.I[row]))
             end
             thisField *= I
-            thisField *= spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+            thisField *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
             low_row  = op_row - 1
             high_row = op_row
@@ -622,7 +622,7 @@ function fieldTerms(A::fPEPS,
                 thisField *= msi
             end
             thisField *= AIH
-            sA = findindex(A[row, col], "Site")
+            sA = firstind(A[row, col], "Site")
             op = copy(H[opcode].ops[1])
             op = replaceindex!(op, H[opcode].site_ind, sA) 
             op = replaceindex!(op, H[opcode].site_ind', sA')
@@ -649,7 +649,7 @@ function connectLeftTerms(A::fPEPS,
     @inbounds for opcode in 1:length(H)
         op_row_b = H[opcode].sites[2][1]
         op_b = copy(H[opcode].ops[2])
-        as   = findindex(A[op_row_b, col], "Site")
+        as   = firstind(A[op_row_b, col], "Site")
         op_b = replaceindex!(op_b, H[opcode].site_ind, as)
         op_b = replaceindex!(op_b, H[opcode].site_ind', as')
         thisHori = is_cu ? cuITensor(1.0) : ITensor(1.0)
@@ -670,7 +670,7 @@ function connectLeftTerms(A::fPEPS,
                 thisHori *= multiply_side_ident(A[row, col], ci, copy(R.I[row]))
             end
             thisHori *= I
-            thisHori *= spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+            thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
             low_row = (op_row_b <= row) ? op_row_b - 1 : row - 1;
             high_row = (op_row_b >= row) ? op_row_b + 1 : row + 1;
@@ -711,7 +711,7 @@ function connectRightTerms(A::fPEPS,
     @inbounds for opcode in 1:length(H)
         op_row_a = H[opcode].sites[1][1]
         op_a = copy(H[opcode].ops[1])
-        as   = findindex(A[op_row_a, col], "Site")
+        as   = firstind(A[op_row_a, col], "Site")
         op_a = replaceindex!(op_a, H[opcode].site_ind, as)
         op_a = replaceindex!(op_a, H[opcode].site_ind', as')
         thisHori = is_cu ? cuITensor(1.0) : ITensor(1.0)
@@ -732,7 +732,7 @@ function connectRightTerms(A::fPEPS,
                 thisHori *= multiply_side_ident(A[row, col], ci, copy(L.I[row]))
             end
             thisHori *= I
-            thisHori *= spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+            thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
             low_row = (op_row_a <= row) ? op_row_a - 1 : row - 1;
             high_row = (op_row_a >= row) ? op_row_a + 1 : row + 1;
@@ -861,7 +861,7 @@ function intraColumnGauge(A::fPEPS, col::Int; kwargs...)::fPEPS
     Ny, Nx = size(A)
     @inbounds for row in reverse(2:Ny)
         @debug "\tBeginning intraColumnGauge for col $col row $row"
-        cmb_is   = IndexSet(findindex(A[row, col], "Site"))
+        cmb_is   = IndexSet(firstind(A[row, col], "Site"))
         if col > 1
             cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col - 1]))
         end
@@ -890,8 +890,8 @@ function simpleUpdate(A::fPEPS, col::Int, next_col::Int, H; kwargs...)::fPEPS
         if do_side
             hori_col   = next_col < col ? next_col : col
             nhori_col  = next_col < col ? col : next_col
-            si_a       = findindex(A[row, col], "Site")
-            si_b       = findindex(A[row, next_col], "Site")
+            si_a       = firstind(A[row, col], "Site")
+            si_b       = firstind(A[row, next_col], "Site")
             ci         = commonind(A[row, col], A[row, next_col])
             min_dim    = ITensors.dim(ci)
             Ua, Sa, Va = svd(A[row, col], si_a, ci; mindim=min_dim, kwargs...)
@@ -921,8 +921,8 @@ function simpleUpdate(A::fPEPS, col::Int, next_col::Int, H; kwargs...)::fPEPS
             A[row, next_col] = Sb * Vb * Vf
         end
         if row < Ny
-            si_a       = findindex(A[row, col], "Site")
-            si_b       = findindex(A[row+1, col], "Site")
+            si_a       = firstind(A[row, col], "Site")
+            si_b       = firstind(A[row+1, col], "Site")
             ci         = commonind(A[row, col], A[row+1, col])
             min_dim    = ITensors.dim(ci)
             Ua, Sa, Va = svd(A[row, col], si_a, ci; mindim=min_dim, kwargs...)
@@ -960,7 +960,6 @@ function buildAncs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
     @debug "\tMaking ancillary identity terms for col $col"
     Ia = makeAncillaryIs(A, L, R, col)
-    #Ib = fill(dummy, Ny)
     Ib = Vector{ITensor}(undef, Ny)
     Is = (above=Ia, below=Ib)
 
@@ -1001,7 +1000,7 @@ function updateAncs(A::fPEPS,
                     AncEnvs, H, 
                     row::Int, col::Int)
     Ny, Nx = size(A)
-    is_cu = is_gpu(A) 
+    is_cu  = is_gpu(A) 
    
     Is, Vs, Fs, Ls, Rs = AncEnvs
     @debug "\tUpdating ancillary identity terms for col $col row $row"
@@ -1082,7 +1081,7 @@ function optimizeLocalH(A::fPEPS,
     @timeit "restore intraColumnGauge" begin
         if row < Ny
             @debug "\tRestoring intraColumnGauge for col $col row $row"
-            cmb_is   = IndexSet(findindex(A[row, col], "Site"))
+            cmb_is     = IndexSet(firstind(A[row, col], "Site"))
             if col > 1
                 cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col - 1]))
             end
@@ -1094,18 +1093,18 @@ function optimizeLocalH(A::fPEPS,
             if row > 1
                 Lis = IndexSet(Lis, commonind(A[row, col], A[row - 1, col]))
             end
-            old_ci = commonind(A[row, col], A[row+1, col])
-            svdA = new_A*cmb
-            Ris = uniqueinds(inds(svdA), Lis) 
+            old_ci  = commonind(A[row, col], A[row+1, col])
+            svdA    = new_A*cmb
+            Ris     = uniqueinds(inds(svdA), Lis) 
             U, S, V = svd(svdA, Ris; kwargs...)
-            new_ci = commonind(V, S)
+            new_ci  = commonind(V, S)
             replaceindex!(V, new_ci, old_ci)
             A[row, col]    = V*cmb 
             newU = S*U*A[row+1, col]
             replaceindex!(newU, new_ci, old_ci)
             A[row+1, col] = newU
             if row < Ny - 1
-                nI    = spinI(findindex(A[row+1, col], "Site"); is_gpu=is_cu)
+                nI    = spinI(firstind(A[row+1, col], "Site"); is_gpu=is_cu)
                 newAA = A[row+1, col] * nI * dag(A[row+1, col])'
                 if col > 1
                     ci     = commonind(A[row+1, col], A[row+1, col-1])
@@ -1283,8 +1282,9 @@ function doSweeps(A::fPEPS,
                   cutoff::Float64=0., 
                   env_maxdim=2maxdim, 
                   do_mag::Bool=false, 
-                  prefix="$(Nx)_$(maxdim)_mag", 
+                  prefix="mag", 
                   max_gauge_iter::Int=10)
+    Ny, Nx = size(A) 
     for sweep in sweep_start:sweep_count
         if iseven(sweep)
             (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter)

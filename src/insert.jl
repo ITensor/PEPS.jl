@@ -15,30 +15,30 @@ function reindexA(A::fPEPS, new_A::fPEPS)
     for col in 1:Nx, row in 1:Ny
         oldSpin = findindex(new_A[row, col], "Site")
         newSpin = Index(dim(oldSpin), tags(oldSpin))
-        replaceindex!(new_A[row, col], oldSpin, newSpin)
+        replaceind!(new_A[row, col], oldSpin, newSpin)
         if row != Ny
-            oldUp = commonindex(A[row, old_column[col]], A[row+1, old_column[col]])
+            oldUp = commonind(A[row, old_column[col]], A[row+1, old_column[col]])
             newUp = Index(dim(oldUp), "Link,u,c$col,r$row")
             new_up_bonds[row, col] = newUp
             new_down_bonds[row+1, col] = newUp
-            replaceindex!(new_A[row, col], oldUp, newUp)
+            replaceind!(new_A[row, col], oldUp, newUp)
         end
         if row != 1
-            oldDown = commonindex(A[row, old_column[col]], A[row-1, old_column[col]])
+            oldDown = commonind(A[row, old_column[col]], A[row-1, old_column[col]])
             newDown = new_down_bonds[row, col] 
-            replaceindex!(new_A[row, col], oldDown, newDown)
+            replaceind!(new_A[row, col], oldDown, newDown)
         end
         if col != Nx
-            oldRight = commonindex(A[row, old_column[col]+1], A[row, old_column[col]])
+            oldRight = commonind(A[row, old_column[col]+1], A[row, old_column[col]])
             newRight = Index(dim(oldRight), "Link,r,c$col,r$row")
             new_right_bonds[row, col]  = newRight
             new_left_bonds[row, col+1] = newRight
-            replaceindex!(new_A[row, col], oldRight, newRight)
+            replaceind!(new_A[row, col], oldRight, newRight)
         end
         if col != 1
-            oldLeft = commonindex(A[row, old_column[col]-1], A[row, old_column[col]])
+            oldLeft = commonind(A[row, old_column[col]-1], A[row, old_column[col]])
             newLeft = new_left_bonds[row, col] 
-            replaceindex!(new_A[row, col], oldLeft, newLeft)
+            replaceind!(new_A[row, col], oldLeft, newLeft)
         end
     end
     return new_A
@@ -51,8 +51,8 @@ function InsertTensors(A::fPEPS, Rs::Vector{Environments}, Ls::Vector{Environmen
     A, Q_f, R_f, finds = gaugeColumnForInsert(A, midpoint, :right; kwargs...)
     for row in 1:Ny
         QRind = findindex(Q_f[row], "QR")
-        ci    = commonindex(A[row, midpoint], A[row, midpoint + 1])
-        replaceindex!(Q_f[row], QRind, ci)
+        ci    = commonind(A[row, midpoint], A[row, midpoint + 1])
+        replaceind!(Q_f[row], QRind, ci)
         A[row, midpoint] = Q_f[row]
     end
     oldH = deepcopy(H)
@@ -87,8 +87,8 @@ function InsertTensors(A::fPEPS, Rs::Vector{Environments}, Ls::Vector{Environmen
         X[row] /= norm(X[row])
         i_ind = findindex(Λı[row], "DM")
         j_ind = findindex(Λȷ[row], "QR")
-        replaceindex!(Λȷ[row], j_ind, i_ind)
-        replaceindex!(Λȷ[row], finds[row], rinds[row])
+        replaceind!(Λȷ[row], j_ind, i_ind)
+        replaceind!(Λȷ[row], finds[row], rinds[row])
     end
     γ = 0.05
     inner_product = 0.1
@@ -130,10 +130,10 @@ function InsertTensors(A::fPEPS, Rs::Vector{Environments}, Ls::Vector{Environmen
     end
     A[:, midpoint+1] = tensors(XRQ)
     for row in 1:Ny
-        qr_ci = commonindex(A[row, midpoint], A[row, midpoint+1])
+        qr_ci = commonind(A[row, midpoint], A[row, midpoint+1])
         new_link = Index(dim(qr_ci), "Link,r,c$midpoint,r$row")
-        replaceindex!(A[row, midpoint], qr_ci, new_link)
-        replaceindex!(A[row, midpoint+1], qr_ci, new_link)
+        replaceind!(A[row, midpoint], qr_ci, new_link)
+        replaceind!(A[row, midpoint+1], qr_ci, new_link)
     end
     return A, H
 end
@@ -154,7 +154,7 @@ function rightwardSweepToInsert(A::fPEPS, Ls::Vector{Environments}, Rs::Vector{E
     leftmost  = sweep_width == Nx ? 1 : midpoint - div(sweep_width, 2)
     if leftmost > 1 
         for row in 1:Ny
-            prev_cmb_r[row] = reconnect(commonindex(A[row, leftmost], A[row, leftmost-1]), Ls[leftmost-1].I[row])
+            prev_cmb_r[row] = reconnect(commonind(A[row, leftmost], A[row, leftmost-1]), Ls[leftmost-1].I[row])
         end
     end
     @inbounds for col in leftmost:rightmost

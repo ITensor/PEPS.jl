@@ -1,12 +1,12 @@
 function prepareRow(A::ITensor, op::ITensor, left_A::ITensor, right_A::ITensor, left_I::ITensor, right_I::ITensor, col::Int, Nx::Int)
     AA = A * op * dag(A')
     if col > 1
-        ci  = commonindex(A, left_A)
+        ci  = commonind(A, left_A)
         msi = multiply_side_ident(AA, ci, left_I)
         AA *= msi
     end
     if col < Nx
-        ci  = commonindex(A, right_A)
+        ci  = commonind(A, right_A)
         msi = multiply_side_ident(AA, ci, right_I)
         AA *= msi
     end
@@ -19,7 +19,7 @@ function makeAncillaryIs(A::fPEPS, L::Environments, R::Environments, col::Int)
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     ops = map(x -> spinI(x; is_gpu=is_cu), col_site_inds)
     AAs = [prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx) for row in 1:Ny]
     Iabove = cumprod(reverse(AAs))
@@ -32,7 +32,7 @@ function makeAncillaryIsBelow(A::fPEPS, L::Environments, R::Environments, col::I
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     ops = map(x -> spinI(x; is_gpu=is_cu), col_site_inds)
     AAs = [prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx) for row in 1:Ny]
     return cumprod(AAs)
@@ -44,7 +44,7 @@ function updateAncillaryIs(A::fPEPS, Ibelow::Vector{ITensor}, L::Environments, R
     dummy   = is_cu   ? cuITensor(1.0)  : ITensor(1.0) 
     left_A  = col > 1  ? A[row, col - 1] : dummy
     right_A = col < Nx ? A[row, col + 1] : dummy
-    op      = spinI(findindex(A[row, col], "Site"); is_gpu=is_cu)
+    op      = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     AA      = prepareRow(A[row, col], op, left_A, right_A, L.I[row], R.I[row], col, Nx)
     AA     *= row > 1  ? Ibelow[row - 1] : dummy 
     Ibelow[row] = AA
@@ -57,7 +57,7 @@ function makeAncillaryFs(A::fPEPS, L::Environments, R::Environments, H, col::Int
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     Fabove   = fill(Vector{ITensor}(), length(H))
     for opcode in 1:length(H)
         op_row      = H[opcode].sites[1][1]
@@ -76,7 +76,7 @@ function updateAncillaryFs(A::fPEPS, Fbelow, Ibelow::Vector{ITensor}, L::Environ
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     for opcode in 1:length(H)
         op_row      = H[opcode].sites[1][1]
         ops         = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
@@ -100,7 +100,7 @@ function makeAncillaryVs(A::fPEPS, L::Environments, R::Environments, H, col::Int
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     Vabove   = fill(Vector{ITensor}(), length(H))
     for opcode in 1:length(H)
         op_row_a      = H[opcode].sites[1][1]
@@ -122,7 +122,7 @@ function makeAncillaryVsBelow(A::fPEPS, L::Environments, R::Environments, H, col
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     Vbelow   = fill(Vector{ITensor}(), length(H))
     for opcode in 1:length(H)
         op_row_a      = H[opcode].sites[1][1]
@@ -144,7 +144,7 @@ function updateAncillaryVs(A::fPEPS, Vbelow, Ibelow::Vector{ITensor}, L::Environ
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     for opcode in 1:length(H)
         op_row_a      = H[opcode].sites[1][1]
         op_row_b      = H[opcode].sites[2][1]
@@ -169,7 +169,7 @@ end
 function makeAncillarySide(A::fPEPS, EnvIP::Environments, EnvIdent::Environments, H, col::Int, side::Symbol)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     Sabove   = fill(Vector{ITensor}(), length(H))
     next_col = side == :left ? col + 1 : col - 1
     for opcode in 1:length(H)
@@ -181,7 +181,7 @@ function makeAncillarySide(A::fPEPS, EnvIP::Environments, EnvIdent::Environments
         ops[op_row] = replaceind!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
         AAs         = [A[row, col] * ops[row] * dag(A[row, col])' * EnvIP.InProgress[row, opcode] for row in 1:Ny]
         if (col > 1 && side == :right) || (col < Nx && side == :left)
-            cis = [commonindex(A[row, col], A[row, next_col]) for row in 1:Ny]
+            cis = [commonind(A[row, col], A[row, next_col]) for row in 1:Ny]
             msi = [multiply_side_ident(AAs[row], cis[row], EnvIdent.I[row]) for row in 1:Ny]
             AAs = AAs .* msi
         end
@@ -193,7 +193,7 @@ end
 function makeAncillarySideBelow(A::fPEPS, EnvIP::Environments, EnvIdent::Environments, H, col::Int, side::Symbol)
     Ny, Nx   = size(A)
     is_cu   = is_gpu(A) 
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     Sbelow   = fill(Vector{ITensor}(), length(H))
     next_col = side == :left ? col + 1 : col - 1
     for opcode in 1:length(H)
@@ -205,7 +205,7 @@ function makeAncillarySideBelow(A::fPEPS, EnvIP::Environments, EnvIdent::Environ
         ops[op_row] = replaceind!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
         AAs         = [A[row, col] * ops[row] * dag(A[row, col])' * EnvIP.InProgress[row, opcode] for row in 1:Ny]
         if (col > 1 && side == :right) || (col < Nx && side == :left)
-            cis = [commonindex(A[row, col], A[row, next_col]) for row in 1:Ny]
+            cis = [commonind(A[row, col], A[row, next_col]) for row in 1:Ny]
             msi = [multiply_side_ident(AAs[row], cis[row], EnvIdent.I[row]) for row in 1:Ny]
             AAs = AAs .* msi
         end
@@ -217,7 +217,7 @@ end
 function updateAncillarySide(A::fPEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::Environments, EnvIdent::Environments, H, row::Int, col::Int, side::Symbol)
     Ny, Nx   = size(A)
     is_cu    = is_gpu(A) 
-    col_site_inds = [findindex(x, "Site") for x in A[:, col]]
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     next_col = side == :left ? col + 1 : col - 1
     prev_col = side == :left ? col + 1 : col - 1
     for opcode in 1:length(H)
@@ -229,7 +229,7 @@ function updateAncillarySide(A::fPEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::E
         ops[op_row]   = replaceind!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
         AA            = A[row, col] * ops[row] * dag(A[row, col]')
         if (col > 1 && side == :right) || (col < Nx && side == :left)
-            ci  = commonindex(A[row, col], A[row, prev_col])
+            ci  = commonind(A[row, col], A[row, prev_col])
             msi = multiply_side_ident(AA, ci, EnvIdent.I[row])
             AA  = AA * msi
         end
