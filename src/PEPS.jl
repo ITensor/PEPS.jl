@@ -8,6 +8,6 @@ using Random, Logging, LinearAlgebra, DelimitedFiles
 
 include("peps_util.jl")
 
-export fPEPS, randomfPEPS, cufPEPS, randomCufPEPS, buildEdgeEnvironment, buildNextEnvironment, buildLs, buildRs
+export fPEPS, randomfPEPS, checkerboardfPEPS, cufPEPS, randomCufPEPS, buildEdgeEnvironment, buildNextEnvironment, buildLs, buildRs
 
 end # module
