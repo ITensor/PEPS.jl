@@ -18,7 +18,7 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
     hori_cmbs      = Vector{ITensor}(undef, Ny)
     hori_cis       = Vector{Index}(undef, Ny)
     for row in 1:Ny
-        cmb, ci = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
+        cmb, ci        = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
         hori_cmbs[row] = cmb 
         hori_cis[row]  = ci
     end
@@ -26,31 +26,11 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
     for row in 1:Ny
         guess[row] *= hori_cmbs[row]
     end
-    #=if col != 1 && col != Nx
-        guess = deepcopy(prev_mps)
-        for row in 1:Ny
-            replaceinds!(guess, hori_prev_inds[row], A_prev_unique[row]) 
-        end
-    end=#
-    #=guess          = Vector{ITensor}(undef, Ny)
-    guess[1]       = randomITensor(IndexSet(A_prev_unique[1]..., up_inds[1] ) ) 
-    guess[2:Ny-1]  = [randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row], up_inds[row-1] )) for row in 2:Ny-1]
-    guess[Ny]      = randomITensor(IndexSet(A_prev_unique[Ny]..., up_inds[Ny- 1] ) ) 
-    for row in 1:Ny
-        normalize!(guess[row])
-        @show guess[row]
-    end
     if is_cu
-        guess = cuITensor.(guess)
-    end=#
-    norm = is_cu ? cuITensor(1.0) : ITensor(1.0)
-    for row in 1:Ny
-        norm *= guess[row] * dag(prime(guess[row], "Link,u"))
+        guess = cuMPS(guess)
     end
+    orthogonalize!(guess, 1)
     for sweep in 1:1
-        #guess_mps = MPS(Ny, guess, 0, Ny+1)
-        #orthogonalize!(guess_mps, 1; mindim=chi)
-        #guess = store(guess_mps)
         order = isodd(sweep) ? (1:Ny) : reverse(1:Ny)
         for row in order
             # construct environment for the row, have to do this every time
@@ -77,9 +57,10 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
             Env *= dag(prime(A[row, col]))
             Env *= Env_above
             # update guess at row
-            guess[row] = Env
+            guess[row] = copy(Env)
         end
     end
+    orthogonalize!(guess, 1)
     return guess
 end
 
@@ -89,7 +70,7 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
     chi::Int        = get(kwargs, :env_maxdim, 1)
     dummy = Vector{ITensor}(undef, Ny)
     for row in 1:Ny
-        dummy[row] = is_cu ? cuITensor(1.0) : ITensor(1.0) 
+        dummy[row]  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
     end
     dummy_mps       = MPS(Ny, dummy, 0, Ny+1)
     I_mps           = buildNewI(A, dummy_mps, col, chi)
@@ -119,6 +100,8 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
             replaceind!(Hs[ii][row+1], bad_ind, up_inds[row])
         end
         @show Hs[ii][1]
+        @show Hs[ii][2]
+        println()
         orthogonalize!(Hs[ii], 1)
     end
     H_overall       = sum(Hs; cutoff=cutoff, maxdim=chi)
@@ -126,6 +109,7 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
         H_overall[row] *= hori_cmbs[row]
     end
     @show H_overall[1]
+    @show H_overall[2]
     flush(stdout)
     @debug "Summed Hs, maxdim=$maxdim"
     side_H          = side == :left ? H[:, col] : H[:, col - 1]
