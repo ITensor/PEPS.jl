@@ -202,22 +202,19 @@ function buildN(A::fPEPS,
     end
     if col > 1
         ci = commonind(A[row, col], A[row, col-1])
-        workingN *= multiply_side_ident(A[row, col], ci, copy(L.I[row])) 
+        workingN *= multiply_side_ident(A[row, col], ci, L.I[row])
     end
     workingN *= ϕ
     if col < Nx
         ci = commonind(A[row, col], A[row, col+1])
-        workingN *= multiply_side_ident(A[row, col], ci, copy(R.I[row])) 
+        workingN *= multiply_side_ident(A[row, col], ci, R.I[row]) 
     end
     return workingN
 end
 
 
 function multiply_side_ident(A::ITensor, ci::Index, side_I::ITensor)
-    scmb        = firstind(side_I, "Site")
-    acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
-    replaceind!(acmb, acmbi, scmb)
-    return side_I * acmb
+    return side_I 
 end
 
 function nonWorkRow(A::fPEPS, 
@@ -334,33 +331,19 @@ function buildHIedge(A::fPEPS,
     next_col = side == :left ? 2 : Nx - 1
     @inbounds for work_row in 1:row-1
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        ci = commonind(A[work_row, col], A[work_row, next_col])
-        cmb = firstind(E.I[work_row], "Site")
-        acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
-        replaceindex!(acmb, acmbi, cmb)
-        AA *= acmb
         HI *= AA * E.I[work_row]
         IH *= E.H[work_row] * AA
     end
-    ci  = commonind(A[row, col], A[row, next_col])
-    cmb = firstind(E.I[row], "Site")
-    acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
-    replaceindex!(acmb, acmbi, cmb)
     op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     op = is_cu ? cuITensor(op) : op
     HI *= ϕ
     IH *= ϕ
     HI *= op
     IH *= op
-    HI *= E.I[row] * acmb
-    IH *= E.H[row] * acmb
+    HI *= E.I[row]
+    IH *= E.H[row]
     @inbounds for work_row in row+1:Ny
-        AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        ci = commonind(A[work_row, col], A[work_row, next_col])
-        cmb = firstind(E.I[work_row], "Site")
-        acmb, acmbi = combiner(IndexSet(ci, ci'), tags="Site")
-        replaceindex!(acmb, acmbi, cmb)
-        AA *= acmb 
+        AA  = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
         HI *= AA * E.I[work_row]
         IH *= E.H[work_row] * AA
     end
@@ -387,44 +370,14 @@ function buildHIs(A::fPEPS,
     HLI   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IHR   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     @inbounds for work_row in 1:row-1
-        AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        lci = commonind(A[work_row, col], A[work_row, col-1])
-        rci = commonind(A[work_row, col], A[work_row, col+1])
-        lcmb = firstind(L.I[work_row], "Site")
-        rcmb = firstind(R.I[work_row], "Site")
-        lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
-        racmb, racmbi = combiner(IndexSet(rci, rci'), tags="Site")
-        replaceindex!(lacmb, lacmbi, lcmb)
-        replaceindex!(racmb, racmbi, rcmb)
-        AA *= lacmb
-        AA *= racmb
+        AA  = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
         HLI_b *= L.H[work_row] * AA * R.I[work_row]
         IHR_b *= L.I[work_row] * AA * R.H[work_row]
     end
-    lci = commonind(A[row, col], A[row, col-1])
-    rci = commonind(A[row, col], A[row, col+1])
-    lcmb = firstind(L.I[row], "Site")
-    rcmb = firstind(R.I[row], "Site")
-    lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
-    racmb, racmbi = combiner(IndexSet(rci, rci'), tags="Site")
-    replaceindex!(lacmb, lacmbi, lcmb)
-    replaceindex!(racmb, racmbi, rcmb)
-    HLI  *= L.H[row] * lacmb * R.I[row] * racmb
-    HLI  *= ϕ
-    IHR  *= L.I[row] * lacmb * R.H[row] * racmb 
-    IHR  *= ϕ
+    HLI  *= L.H[row] * ϕ * R.I[row]
+    IHR  *= L.I[row] * ϕ * R.H[row]
     @inbounds for work_row in reverse(row+1:Ny)
         AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        lci = commonind(A[work_row, col], A[work_row, col-1])
-        rci = commonind(A[work_row, col], A[work_row, col+1])
-        lcmb = firstind(L.I[work_row], "Site")
-        rcmb = firstind(R.I[work_row], "Site")
-        lacmb, lacmbi = combiner(IndexSet(lci, lci'), tags="Site")
-        racmb, racmbi = combiner(IndexSet(rci, rci'), tags="Site")
-        replaceindex!(lacmb, lacmbi, lcmb)
-        replaceindex!(racmb, racmbi, rcmb)
-        AA *= lacmb
-        AA *= racmb
         HLI_a *= L.H[work_row] * AA * R.I[work_row]
         IHR_a *= L.I[work_row] * AA * R.H[work_row]
     end
@@ -762,7 +715,7 @@ function buildLocalH(A::fPEPS,
                      AncEnvs, H, 
                      row::Int, col::Int, 
                      ϕ::ITensor; 
-                     verbose::Bool=false)
+                     verbose::Bool=true)
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
     term_count    = 1 + length(field_H_terms) + length(vert_H_terms)
@@ -1173,19 +1126,12 @@ function rightwardSweep(A::fPEPS,
     Ny, Nx = size(A)
     dummyI = MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
     dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny)) 
-    prev_cmb_r = Vector{ITensor}(undef, Ny)
-    next_cmb_r = Vector{ITensor}(undef, Ny)
     sweep::Int = get(kwargs, :sweep, 0)
     sweep_width::Int = get(kwargs, :sweep_width, Nx)
     offset    = mod(Nx, 2)
     midpoint  = div(Nx, 2)
     rightmost = sweep_width == Nx ? Nx - 1 : midpoint + div(sweep_width, 2) + offset
     leftmost  = sweep_width == Nx ? 1 : midpoint - div(sweep_width, 2)
-    if leftmost > 1 
-        for row in 1:Ny
-            prev_cmb_r[row] = reconnect(commonind(A[row, leftmost], A[row, leftmost-1]), Ls[leftmost-1].I[row])
-        end
-    end
     @inbounds for col in leftmost:rightmost
         L = col == 1 ? dummyEnv : Ls[col - 1]
         @debug "Sweeping col $col"
@@ -1193,6 +1139,8 @@ function rightwardSweep(A::fPEPS,
             @timeit "sweep" begin
                 A = sweepColumn(A, L, Rs[col+1], H, col; kwargs...)
             end
+            println("Swept column $col")
+            flush(stdout)
         end
         if sweep < simple_update_cutoff
             # Simple update...
@@ -1201,17 +1149,18 @@ function rightwardSweep(A::fPEPS,
         if sweep >= simple_update_cutoff
             # Gauge
             A = gaugeColumn(A, col, :right; kwargs...)
+            println("Gauged column $col")
+            flush(stdout)
         end
         if col == 1
             left_H_terms = getDirectional(H[1], Horizontal)
             @timeit "left edge env" begin
-                Ls[col] = buildEdgeEnvironment(A, H, left_H_terms, prev_cmb_r, :left, 1; kwargs...)
+                Ls[col] = buildEdgeEnvironment(A, H, left_H_terms, :left, 1; kwargs...)
             end
         else
             @timeit "left next env" begin
-                Ls[col] = buildNextEnvironment(A, Ls[col-1], H, prev_cmb_r, next_cmb_r, :left, col; kwargs...)
+                Ls[col] = buildNextEnvironment(A, Ls[col-1], H, :left, col; kwargs...)
             end
-            prev_cmb_r = deepcopy(next_cmb_r)
         end
     end
     return A, Ls, Rs
@@ -1226,19 +1175,12 @@ function leftwardSweep(A::fPEPS,
     Ny, Nx = size(A)
     dummyI = MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
     dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny)) 
-    prev_cmb_l = Vector{ITensor}(undef, Ny)
-    next_cmb_l = Vector{ITensor}(undef, Ny)
     sweep::Int = get(kwargs, :sweep, 0)
     sweep_width::Int = get(kwargs, :sweep_width, Nx)
     offset    = mod(Nx, 2)
     midpoint  = div(Nx, 2)
     rightmost = midpoint + div(sweep_width, 2) + offset
     leftmost  = sweep_width == Nx ? 2 : midpoint - div(sweep_width, 2)
-    if rightmost < Nx
-        for row in 1:Ny
-            prev_cmb_l[row] = reconnect(commonind(A[row, rightmost], A[row, rightmost+1]), Rs[rightmost+1].I[row])
-        end
-    end
     @inbounds for col in reverse(leftmost:rightmost)
         R = col == Nx ? dummyEnv : Rs[col + 1]
         @debug "Sweeping col $col"
@@ -1246,6 +1188,8 @@ function leftwardSweep(A::fPEPS,
             @timeit "sweep" begin
                 A = sweepColumn(A, Ls[col - 1], R, H, col; kwargs...)
             end
+            println("Swept column $col")
+            flush(stdout)
         end
         if sweep < simple_update_cutoff
             # Simple update...
@@ -1254,17 +1198,18 @@ function leftwardSweep(A::fPEPS,
         if sweep >= simple_update_cutoff
             # Gauge
             A = gaugeColumn(A, col, :left; kwargs...)
+            println("Gauged column $col")
+            flush(stdout)
         end
         if col == Nx
             right_H_terms = getDirectional(H[Nx - 1], Horizontal)
             @timeit "right edge env" begin
-                Rs[col] = buildEdgeEnvironment(A, H, right_H_terms, prev_cmb_l, :right, Nx; kwargs...)
+                Rs[col] = buildEdgeEnvironment(A, H, right_H_terms, :right, Nx; kwargs...)
             end
         else
             @timeit "right next env" begin
-                Rs[col] = buildNextEnvironment(A, Rs[col+1], H, prev_cmb_l, next_cmb_l, :right, col; kwargs...)
+                Rs[col] = buildNextEnvironment(A, Rs[col+1], H, :right, col; kwargs...)
             end
-            prev_cmb_l = deepcopy(next_cmb_l)
         end
     end
     return A, Ls, Rs
@@ -1307,8 +1252,6 @@ function doSweeps(A::fPEPS,
             z_mag = zeros(Ny, Nx)
             v_mag = zeros(Ny, Nx)
             h_mag = zeros(Ny, Nx)
-            prev_cmb = Vector{ITensor}(undef, Ny)
-            next_cmb = Vector{ITensor}(undef, Ny)
             if iseven(sweep)
                 L_s = buildLs(A_, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
                 R_s = buildRs(A_, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
@@ -1323,11 +1266,10 @@ function doSweeps(A::fPEPS,
                     if col > 1 
                         A_  = gaugeColumn(A_, col, :left; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
                         if col < Nx
-                            R_s[col] = buildNextEnvironment(A_, R_s[col+1], H, prev_cmb, next_cmb, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
-                            prev_cmb = deepcopy(next_cmb)
+                            R_s[col] = buildNextEnvironment(A_, R_s[col+1], H, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                         else
                             right_H_terms = getDirectional(H[Nx-1], Horizontal)
-                            R_s[col] = buildEdgeEnvironment(A_, H, right_H_terms, prev_cmb, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                            R_s[col] = buildEdgeEnvironment(A_, H, right_H_terms, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                         end
                     end
                 end
@@ -1345,11 +1287,10 @@ function doSweeps(A::fPEPS,
                     if col < Nx 
                         A_  = gaugeColumn(A_, col, :right; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
                         if col > 1
-                            L_s[col] = buildNextEnvironment(A_, L_s[col-1], H, prev_cmb, next_cmb, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
-                            prev_cmb = deepcopy(next_cmb)
+                            L_s[col] = buildNextEnvironment(A_, L_s[col-1], H, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                         else
                             left_H_terms = getDirectional(H[1], Horizontal)
-                            L_s[col] = buildEdgeEnvironment(A_, H, left_H_terms, prev_cmb, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                            L_s[col] = buildEdgeEnvironment(A_, H, left_H_terms, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                         end
                     end
                 end
