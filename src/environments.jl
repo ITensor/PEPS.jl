@@ -15,39 +15,70 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
     hori_prev_inds = [inds(prev_mps[row], "Link, r") for row in 1:Ny]
     double_hori_A  = [IndexSet(hori_A_inds[row], prime(hori_A_inds[row])) for row in 1:Ny]
     A_prev_unique  = [setdiff(double_hori_A[row], hori_prev_inds[row]) for row in 1:Ny]
-    guess   = Vector{ITensor}(undef, Ny)
-    guess[1] = randomITensor( IndexSet(A_prev_unique[1]..., up_inds[1] ) ) 
-    guess[Ny] = randomITensor( IndexSet(A_prev_unique[Ny]..., up_inds[Ny- 1] ) ) 
-    guess[2:Ny-1] = [randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row], up_inds[row-1] )) for row in 2:Ny-1]
+    hori_cmbs      = Vector{ITensor}(undef, Ny)
+    hori_cis       = Vector{Index}(undef, Ny)
+    for row in 1:Ny
+        cmb, ci = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
+        hori_cmbs[row] = cmb 
+        hori_cis[row]  = ci
+    end
+    guess = randomMPS(hori_cis, chi)
+    for row in 1:Ny
+        guess[row] *= hori_cmbs[row]
+    end
+    #=if col != 1 && col != Nx
+        guess = deepcopy(prev_mps)
+        for row in 1:Ny
+            replaceinds!(guess, hori_prev_inds[row], A_prev_unique[row]) 
+        end
+    end=#
+    #=guess          = Vector{ITensor}(undef, Ny)
+    guess[1]       = randomITensor(IndexSet(A_prev_unique[1]..., up_inds[1] ) ) 
+    guess[2:Ny-1]  = [randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row], up_inds[row-1] )) for row in 2:Ny-1]
+    guess[Ny]      = randomITensor(IndexSet(A_prev_unique[Ny]..., up_inds[Ny- 1] ) ) 
+    for row in 1:Ny
+        normalize!(guess[row])
+        @show guess[row]
+    end
     if is_cu
         guess = cuITensor.(guess)
-    end
+    end=#
+    norm = is_cu ? cuITensor(1.0) : ITensor(1.0)
     for row in 1:Ny
-        # construct environment for the row, have to do this every time
-        Env_above = is_cu ? cuITensor(1.0) : ITensor(1.0)
-        Env_below = is_cu ? cuITensor(1.0) : ITensor(1.0)
-        for env_row in 1:row-1
-            Env_below *= prev_mps[env_row]
-            Env_below *= A[env_row, col]
-            Env_below *= ops[env_row]
-            Env_below *= dag(prime(A[env_row, col]))
-            Env_below *= guess[env_row]
+        norm *= guess[row] * dag(prime(guess[row], "Link,u"))
+    end
+    for sweep in 1:1
+        #guess_mps = MPS(Ny, guess, 0, Ny+1)
+        #orthogonalize!(guess_mps, 1; mindim=chi)
+        #guess = store(guess_mps)
+        order = isodd(sweep) ? (1:Ny) : reverse(1:Ny)
+        for row in order
+            # construct environment for the row, have to do this every time
+            Env_above = is_cu ? cuITensor(1.0) : ITensor(1.0)
+            Env_below = is_cu ? cuITensor(1.0) : ITensor(1.0)
+            for env_row in 1:row-1
+                Env_below *= prev_mps[env_row]
+                Env_below *= A[env_row, col]
+                Env_below *= ops[env_row]
+                Env_below *= dag(prime(A[env_row, col]))
+                Env_below *= guess[env_row]
+            end
+            for env_row in reverse(row+1:Ny)
+                Env_above *= prev_mps[env_row]
+                Env_above *= A[env_row, col]
+                Env_above *= ops[env_row]
+                Env_above *= dag(prime(A[env_row, col]))
+                Env_above *= guess[env_row]
+            end
+            Env  = Env_below
+            Env *= prev_mps[row]
+            Env *= A[row, col]
+            Env *= ops[row]
+            Env *= dag(prime(A[row, col]))
+            Env *= Env_above
+            # update guess at row
+            guess[row] = Env
         end
-        for env_row in reverse(row+1:Ny)
-            Env_above *= prev_mps[env_row]
-            Env_above *= A[env_row, col]
-            Env_above *= ops[env_row]
-            Env_above *= dag(prime(A[env_row, col]))
-            Env_above *= guess[env_row]
-        end
-        Env  = Env_below 
-        Env *= prev_mps[row]
-        Env *= A[row, col]
-        Env *= ops[row] 
-        Env *= dag(prime(A[row, col]))
-        Env *= Env_above
-        # update guess at row
-        guess[row] = Env
     end
     return guess
 end
@@ -87,6 +118,7 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
             replaceind!(Hs[ii][row], bad_ind, up_inds[row])
             replaceind!(Hs[ii][row+1], bad_ind, up_inds[row])
         end
+        @show Hs[ii][1]
         orthogonalize!(Hs[ii], 1)
     end
     H_overall       = sum(Hs; cutoff=cutoff, maxdim=chi)
@@ -94,6 +126,7 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
         H_overall[row] *= hori_cmbs[row]
     end
     @show H_overall[1]
+    flush(stdout)
     @debug "Summed Hs, maxdim=$maxdim"
     side_H          = side == :left ? H[:, col] : H[:, col - 1]
     side_H_terms    = getDirectional(vcat(side_H...), Horizontal)
@@ -114,12 +147,12 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
     Ny, Nx        = size(A)
     chi::Int       = get(kwargs, :env_maxdim, 1)
     println("A row 1:")
-    @show A[1, col]
+    #@show A[1, col]
     @timeit "build new_I and new_H" begin
         new_I = buildNewI(A, prev_Env.I, col, chi)
         new_H = buildNewI(A, prev_Env.H, col, chi)
         println("result in new_H 1:")
-        @show new_H[1]
+        #@show new_H[1]
     end
     @debug "Built new I and H"
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
@@ -141,12 +174,12 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
     @timeit "build new H array" begin
         for (vv, vH) in enumerate(vHs)
             println("result in buildNewVerticals 1:")
-            @show vHs[vv][1]
+            #@show vHs[vv][1]
             new_H_mps[1+vv] = vHs[vv]
         end
         for (ff, fH) in enumerate(fHs)
             println("result in buildNewFields 1:")
-            @show fHs[ff][1]
+            #@show fHs[ff][1]
             new_H_mps[1+length(vHs)+ff] = fHs[ff]
         end
     end
@@ -155,7 +188,7 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
         for (cc, cH) in enumerate(connect_H)
             new_H = connectDanglingBonds(A, cH, prev_Env.InProgress[:, cc], side, -1, col; kwargs...)
             println("result in connect dangling bonds 1:")
-            @show new_H[1]
+            #@show new_H[1]
             new_H_mps[length(vert_H_terms) + length(field_H_terms) + 1 + cc] = MPS(Ny, new_H, 0, Ny+1)
         end
     end
@@ -210,8 +243,7 @@ function buildNewVerticals(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
     ops[vertical_row_a] = replaceind!(ops[vertical_row_a], H.site_ind', col_site_inds[vertical_row_a]')
     ops[vertical_row_b] = replaceind!(copy(H.ops[2]), H.site_ind, col_site_inds[vertical_row_b])
     ops[vertical_row_b] = replaceind!(ops[vertical_row_b], H.site_ind', col_site_inds[vertical_row_b]')
-    guess::Vector{ITensor} = fitPEPSMPO(A, store(prev_I), ops, col, chi)
-    return MPS(Ny, guess, 0, Ny+1)
+    return fitPEPSMPO(A, store(prev_I), ops, col, chi)
 end
 
 function buildNewFields(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
@@ -222,8 +254,7 @@ function buildNewFields(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
     field_row      = H.sites[1][1]
     ops[field_row] = replaceind!(copy(H.ops[1]), H.site_ind, col_site_inds[field_row])
     ops[field_row] = replaceind!(ops[field_row], H.site_ind', col_site_inds[field_row]')
-    guess::Vector{ITensor} = fitPEPSMPO(A, store(prev_I), ops, col, chi)
-    return MPS(Ny, guess, 0, Ny+1)
+    return fitPEPSMPO(A, store(prev_I), ops, col, chi)
 end
 
 function buildNewI(A::fPEPS, prev_I::MPS, col::Int, chi::Int)::MPS
@@ -231,8 +262,7 @@ function buildNewI(A::fPEPS, prev_I::MPS, col::Int, chi::Int)::MPS
     is_cu          = is_gpu(A)
     col_site_inds  = [firstind(A[row, col], "Site") for row in 1:Ny]
     ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
-    result         = fitPEPSMPO(A, store(prev_I), ops, col, chi)
-    return MPS(Ny, result, 0, Ny+1) 
+    return fitPEPSMPO(A, store(prev_I), ops, col, chi)
 end
 
 function generateEdgeDanglingBonds(A::fPEPS, H, side::Symbol, col::Int, chi::Int)::Vector{ITensor}
@@ -245,7 +275,7 @@ function generateEdgeDanglingBonds(A::fPEPS, H, side::Symbol, col::Int, chi::Int
     ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
     ops[op_row]    = replaceind!(copy(H_op), H.site_ind, col_site_inds[op_row]) 
     ops[op_row]    = replaceind!(ops[op_row], H.site_ind', col_site_inds[op_row]') 
-    return fitPEPSMPO(A, dummy, ops, col, chi)
+    return store(fitPEPSMPO(A, dummy, ops, col, chi))
 end
 
 function generateNextDanglingBonds(A::fPEPS, 
@@ -286,7 +316,7 @@ function connectDanglingBonds(A::fPEPS,
     ops[application_row] = replaceind!(ops[application_row], oldH.site_ind', col_site_inds[application_row]')
     in_prog_mps    = MPS(Ny, in_progress, 0, Ny + 1)
     if work_row == -1
-        return fitPEPSMPO(A, in_progress, ops, col, chi)
+        return store(fitPEPSMPO(A, in_progress, ops, col, chi))
     else
         this_IP[work_row] = ops[work_row]
         completed_H = MPO(Ny, this_IP, 0, Ny+1)

@@ -70,9 +70,9 @@ function checkerboardfPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
         ivs = vcat(ivs, si(spin_side))
         A[ii][ivs...] = 1.0
     end
-    for row in 1:Ny, col in 1:Nx
+    #=for row in 1:Ny, col in 1:Nx
         A[row, col] += randomITensor(inds(A[row, col]))/10.0
-    end
+    end=#
     return A
 end
 
