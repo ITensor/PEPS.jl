@@ -29,8 +29,9 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
     if is_cu
         guess = cuMPS(guess)
     end
-    orthogonalize!(guess, 1)
-    for sweep in 1:1
+    #orthogonalize!(guess, 1)
+    for sweep in 1:2
+        orthogonalize!(guess, isodd(sweep) ? 1 : Ny)
         order = isodd(sweep) ? (1:Ny) : reverse(1:Ny)
         for row in order
             # construct environment for the row, have to do this every time
@@ -74,6 +75,9 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
     end
     dummy_mps       = MPS(Ny, dummy, 0, Ny+1)
     I_mps           = buildNewI(A, dummy_mps, col, chi)
+    for row in 1:Ny
+        @show I_mps[row]
+    end
     field_H_terms   = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms    = getDirectional(vcat(H[:, col]...), Vertical)
     vHs             = [buildNewVerticals(A, vert_H_terms[vert_op], dummy_mps, col, chi) for vert_op in 1:length(vert_H_terms)]
@@ -99,10 +103,10 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
             replaceind!(Hs[ii][row], bad_ind, up_inds[row])
             replaceind!(Hs[ii][row+1], bad_ind, up_inds[row])
         end
+        #orthogonalize!(Hs[ii], 1)
         @show Hs[ii][1]
         @show Hs[ii][2]
         println()
-        orthogonalize!(Hs[ii], 1)
     end
     H_overall       = sum(Hs; cutoff=cutoff, maxdim=chi)
     for row in 1:Ny
