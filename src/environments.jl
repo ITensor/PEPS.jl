@@ -72,69 +72,72 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
     # need to figure out index structure of guess!
     up_inds = [Index(chi, "Link,c$col,r$row,u") for row in 1:Ny-1]
     # guess should have the indices of A going left/right that prev_mps does not have
-    A_prev_common  = [commonind(A[row, col], prev_mps[row]) for row in 1:Ny]
-    hori_A_inds    = [inds(A[row, col], "Link, r") for row in 1:Ny]
-    hori_prev_inds = [inds(prev_mps[row], "Link, r") for row in 1:Ny]
-    double_hori_A  = [IndexSet(hori_A_inds[row], prime(hori_A_inds[row])) for row in 1:Ny]
-    A_prev_unique  = [setdiff(double_hori_A[row], hori_prev_inds[row]) for row in 1:Ny]
-    hori_cmbs      = Vector{ITensor}(undef, Ny)
-    hori_cis       = Vector{Index}(undef, Ny)
-    for row in 1:Ny
-        cmb, ci        = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
-        hori_cmbs[row] = cmb 
-        hori_cis[row]  = ci
-    end
-    guess = randomMPS(hori_cis, chi)
-    for row in 1:Ny
-        guess[row] *= hori_cmbs[row]
-    end
-    if is_cu
-        guess = cuMPS(guess)
-    end
-    for sweep in 1:1
-        orthogonalize!(guess, isodd(sweep) ? 1 : Ny, mindim=chi)
-        #println("guess in sweep")
-        #@show guess
-        order = isodd(sweep) ? (1:Ny-1) : reverse(1:Ny-1)
-        for row in order
-            # construct environment for the row, have to do this every time
-            Env_above = is_cu ? cuITensor(1.0) : ITensor(1.0)
-            Env_below = is_cu ? cuITensor(1.0) : ITensor(1.0)
-            for env_row in 1:row-1
-                Env_below *= prev_mps[env_row]
-                Env_below *= A[env_row, col]
-                Env_below *= ops[env_row]
-                Env_below *= dag(prime(A[env_row, col]))
-                Env_below *= guess[env_row]
-            end
-            for env_row in reverse(row+2:Ny)
-                Env_above *= prev_mps[env_row]
-                Env_above *= A[env_row, col]
-                Env_above *= ops[env_row]
-                Env_above *= dag(prime(A[env_row, col]))
-                Env_above *= guess[env_row]
-            end
-            Env  = Env_below
-            for row_ in (row, row+1)
-                Env *= prev_mps[row_]
-                Env *= A[row_, col]
-                Env *= ops[row_]
-                Env *= dag(prime(A[row_, col]))
-            end
-            Env *= Env_above
-            # get l-inds for svd
-            svd_linds = setdiff(inds(guess[row]),IndexSet(commonind(guess[row], guess[row+1])))
-            tsvd      = svd(Env, svd_linds, mindim=chi, maxdim=chi)
-            # update guess at row
-            guess[row]   = tsvd.U
-            guess[row+1] = tsvd.S*tsvd.V 
+    @timeit "make guess" begin
+        A_prev_common  = [commonind(A[row, col], prev_mps[row]) for row in 1:Ny]
+        hori_A_inds    = [inds(A[row, col], "Link, r") for row in 1:Ny]
+        hori_prev_inds = [inds(prev_mps[row], "Link, r") for row in 1:Ny]
+        double_hori_A  = [IndexSet(hori_A_inds[row], prime(hori_A_inds[row])) for row in 1:Ny]
+        A_prev_unique  = [setdiff(double_hori_A[row], hori_prev_inds[row]) for row in 1:Ny]
+        hori_cmbs      = Vector{ITensor}(undef, Ny)
+        hori_cis       = Vector{Index}(undef, Ny)
+        for row in 1:Ny
+            cmb, ci        = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
+            hori_cmbs[row] = cmb 
+            hori_cis[row]  = ci
+        end
+        guess = randomMPS(hori_cis, chi)
+        for row in 1:Ny
+            guess[row] *= hori_cmbs[row]
+        end
+        if is_cu
+            guess = cuMPS(guess)
         end
     end
-    #println()
-    #println("guess at end")
-    #@show guess
-    orthogonalize!(guess, 1, mindim=chi, maxdim=chi)
-    #println()
+    for sweep in 1:1
+        @timeit "make Envs_above" begin
+            Envs_above = Vector{ITensor}(undef, Ny+1)
+            Envs_above[end]  = is_cu ? cuITensor(1.0) : ITensor(1.0)
+            for (ii, env_row) in enumerate(reverse(1:Ny))
+                tmp = A[env_row, col]
+                tmp *= ops[env_row]
+                tmp *= prev_mps[env_row]
+                Env_above  = copy(Envs_above[env_row+1])
+                Env_above *= tmp
+                Env_above *= dag(prime(A[env_row, col]))
+                Env_above *= guess[env_row]
+                Envs_above[env_row] = Env_above 
+            end
+        end
+        order = isodd(sweep) ? (1:Ny-1) : reverse(1:Ny-1)
+        Env_below = is_cu ? cuITensor(1.0) : ITensor(1.0)
+        for row in order
+            # construct environment for the row, have to do this every time
+            @timeit "build row Env" begin
+                Env  = copy(Env_below)
+                for row_ in (row, row+1)
+                    tmp = A[row_, col]
+                    tmp *= ops[row_]
+                    tmp *= prev_mps[row_]
+                    Env *= tmp
+                    Env *= dag(prime(A[row_, col]))
+                    if row_ == row
+                        Env_below = copy(Env)
+                    end
+                end
+                Env *= Envs_above[row+2]
+            end
+            # get l-inds for svd
+            @timeit "do SVD" begin
+                svd_linds = setdiff(inds(guess[row]),IndexSet(commonind(guess[row], guess[row+1])))
+                tsvd      = svd(Env, svd_linds, mindim=chi, maxdim=chi)
+                # update guess at row
+                guess[row]   = tsvd.U
+                guess[row+1] = tsvd.S*tsvd.V
+                Env_below   *= guess[row]
+            end
+        end
+    end
+    #orthogonalize!(guess, 1, mindim=chi, maxdim=chi)
     return guess
 end
 
