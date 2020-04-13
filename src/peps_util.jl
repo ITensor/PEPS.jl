@@ -70,9 +70,9 @@ function checkerboardfPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
         ivs = vcat(ivs, si(spin_side))
         A[ii][ivs...] = 1.0
     end
-    #=for row in 1:Ny, col in 1:Nx
+    for row in 1:Ny, col in 1:Nx
         A[row, col] += randomITensor(inds(A[row, col]))/10.0
-    end=#
+    end
     return A
 end
 
@@ -715,7 +715,7 @@ function buildLocalH(A::fPEPS,
                      AncEnvs, H, 
                      row::Int, col::Int, 
                      ϕ::ITensor; 
-                     verbose::Bool=true)
+                     verbose::Bool=false)
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
     term_count    = 1 + length(field_H_terms) + length(vert_H_terms)
@@ -1139,8 +1139,6 @@ function rightwardSweep(A::fPEPS,
             @timeit "sweep" begin
                 A = sweepColumn(A, L, Rs[col+1], H, col; kwargs...)
             end
-            println("Swept column $col")
-            flush(stdout)
         end
         if sweep < simple_update_cutoff
             # Simple update...
@@ -1149,8 +1147,6 @@ function rightwardSweep(A::fPEPS,
         if sweep >= simple_update_cutoff
             # Gauge
             A = gaugeColumn(A, col, :right; kwargs...)
-            println("Gauged column $col")
-            flush(stdout)
         end
         if col == 1
             left_H_terms = getDirectional(H[1], Horizontal)
@@ -1188,8 +1184,6 @@ function leftwardSweep(A::fPEPS,
             @timeit "sweep" begin
                 A = sweepColumn(A, Ls[col - 1], R, H, col; kwargs...)
             end
-            println("Swept column $col")
-            flush(stdout)
         end
         if sweep < simple_update_cutoff
             # Simple update...
@@ -1198,8 +1192,6 @@ function leftwardSweep(A::fPEPS,
         if sweep >= simple_update_cutoff
             # Gauge
             A = gaugeColumn(A, col, :left; kwargs...)
-            println("Gauged column $col")
-            flush(stdout)
         end
         if col == Nx
             right_H_terms = getDirectional(H[Nx - 1], Horizontal)
