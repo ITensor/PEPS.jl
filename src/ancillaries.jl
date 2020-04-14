@@ -15,20 +15,19 @@ end
 
 function makeAncillaryIs(A::fPEPS, L::Environments, R::Environments, col::Int)
     Ny, Nx   = size(A)
-    is_cu   = is_gpu(A) 
+    is_cu    = is_gpu(A)
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
     col_site_inds = [firstind(x, "Site") for x in A[:, col]]
-    ops = map(x -> spinI(x; is_gpu=is_cu), col_site_inds)
-    AAs = [prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx) for row in 1:Ny]
-    Iabove = cumprod(reverse(AAs))
-    return Iabove
+    ops           = map(x -> spinI(x; is_gpu=is_cu), col_site_inds)
+    AAs           = [prepareRow(A[row, col], ops[row], left_As[row], right_As[row], L.I[row], R.I[row], col, Nx) for row in 1:Ny]
+    return cumprod(reverse(AAs))
 end
 
 function makeAncillaryIsBelow(A::fPEPS, L::Environments, R::Environments, col::Int)
     Ny, Nx   = size(A)
-    is_cu   = is_gpu(A) 
+    is_cu    = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
@@ -40,7 +39,7 @@ end
 
 function updateAncillaryIs(A::fPEPS, Ibelow::Vector{ITensor}, L::Environments, R::Environments, row::Int, col::Int )
     Ny, Nx  = size(A)
-    is_cu  = is_gpu(A) 
+    is_cu   = is_gpu(A) 
     dummy   = is_cu   ? cuITensor(1.0)  : ITensor(1.0) 
     left_A  = col > 1  ? A[row, col - 1] : dummy
     right_A = col < Nx ? A[row, col + 1] : dummy
@@ -53,7 +52,7 @@ end
 
 function makeAncillaryFs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx   = size(A)
-    is_cu   = is_gpu(A) 
+    is_cu    = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
@@ -72,7 +71,7 @@ end
 
 function updateAncillaryFs(A::fPEPS, Fbelow, Ibelow::Vector{ITensor}, L::Environments, R::Environments, H, row::Int, col::Int)
     Ny, Nx   = size(A)
-    is_cu   = is_gpu(A) 
+    is_cu    = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
@@ -96,7 +95,7 @@ end
 
 function makeAncillaryVs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx   = size(A)
-    is_cu   = is_gpu(A) 
+    is_cu    = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
@@ -118,7 +117,7 @@ end
 
 function makeAncillaryVsBelow(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx   = size(A)
-    is_cu   = is_gpu(A) 
+    is_cu    = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     left_As  = [col > 1  ? A[row, col - 1] : dummy for row in 1:Ny] 
     right_As = [col < Nx ? A[row, col + 1] : dummy for row in 1:Ny]
