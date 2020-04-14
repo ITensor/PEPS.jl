@@ -91,16 +91,16 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
         #end
         guess = MPS(Ny)
         for row in 1:Ny
+            row_inds = nothing
             if row == 1
-                #guess[row] = randomITensor(IndexSet(hori_cis[row], up_inds[row]))
-                guess[row] = randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row]))
+                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row])
             elseif 1 < row < Ny
-                #guess[row] = randomITensor(IndexSet(hori_cis[row], up_inds[row-1], up_inds[row]))
-                guess[row] = randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row-1], up_inds[row]))
+                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1], up_inds[row])
             else
-                #guess[row] = randomITensor(IndexSet(hori_cis[row], up_inds[row-1]))
-                guess[row] = randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row-1]))
+                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1])
             end
+            #guess[row] = is_cu ? randomCuITensor(row_inds) : randomITensor(row_inds) 
+            guess[row] = randomITensor(row_inds) 
             #guess[row] *= hori_cmbs[row]
         end
         if is_cu
