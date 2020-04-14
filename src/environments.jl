@@ -137,7 +137,6 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
             end
         end
     end
-    #orthogonalize!(guess, 1, mindim=chi, maxdim=chi)
     return guess
 end
 
@@ -235,22 +234,16 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
     # yuck improve this
     @timeit "build new H array" begin
         for (vv, vH) in enumerate(vHs)
-            #println("result in buildNewVerticals 1:")
-            #@show vHs[vv][1]
             new_H_mps[1+vv] = vHs[vv]
         end
         for (ff, fH) in enumerate(fHs)
-            #println("result in buildNewFields 1:")
-            #@show fHs[ff][1]
             new_H_mps[1+length(vHs)+ff] = fHs[ff]
         end
     end
     connect_H    = side == :left ? side_H_terms : hori_H_terms
     @timeit "connect dangling bonds" begin
         for (cc, cH) in enumerate(connect_H)
-            new_H = connectDanglingBonds(A, cH, prev_Env.InProgress[:, cc], side, -1, col; kwargs...)
-            #println("result in connect dangling bonds 1:")
-            #@show new_H[1]
+            new_H = connectDanglingBonds(A, cH, prev_Env.InProgress[:, cc], side, col; kwargs...)
             new_H_mps[length(vert_H_terms) + length(field_H_terms) + 1 + cc] = MPS(Ny, new_H, 0, Ny+1)
         end
     end
@@ -348,7 +341,7 @@ function generateNextDanglingBonds(A::fPEPS,
                                    kwargs...)::Vector{ITensor}
     Ny, Nx          = size(A)
     is_cu           = is_gpu(A)
-    chi::Int         = get(kwargs, :env_maxdim, 1)
+    chi::Int        = get(kwargs, :env_maxdim, 1)
     op_row          = side == :left ? H.sites[1][1] : H.sites[2][1]
     H_op            = side == :left ? H.ops[1]      : H.ops[2]
     col_site_inds   = [firstind(A[row, col], "Site") for row in 1:Ny]
@@ -362,7 +355,6 @@ function connectDanglingBonds(A::fPEPS,
                               oldH,
                               in_progress::Vector{ITensor},
                               side::Symbol,
-                              work_row::Int, 
                               col::Int;
                               kwargs...)::Vector{ITensor}
     Ny, Nx   = size(A)
@@ -371,25 +363,13 @@ function connectDanglingBonds(A::fPEPS,
     op_row_a = oldH.sites[1][1]
     op_row_b = oldH.sites[2][1]
     op       = side == :left ? oldH.ops[2] : oldH.ops[1]
-    application_row = side == :left ? op_row_b : op_row_a
-    col_site_inds  = [firstind(A[row, col], "Site") for row in 1:Ny]
-    ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
+    application_row      = side == :left ? op_row_b : op_row_a
+    col_site_inds        = [firstind(A[row, col], "Site") for row in 1:Ny]
+    ops                  = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds]
     ops[application_row] = replaceind!(copy(op), oldH.site_ind, col_site_inds[application_row])
     ops[application_row] = replaceind!(ops[application_row], oldH.site_ind', col_site_inds[application_row]')
-    in_prog_mps    = MPS(Ny, in_progress, 0, Ny + 1)
-    if work_row == -1
-        return store(fitPEPSMPO(A, in_progress, ops, col, chi))
-    else
-        this_IP[work_row] = ops[work_row]
-        completed_H = MPO(Ny, this_IP, 0, Ny+1)
-        @inbounds for row in 1:Ny-1
-            ci = linkIndex(completed_H, row)
-            ni = Index(ITensors.dim(ci), "u,Link,c$col,r$row")
-            replaceIndex!(completed_H[row],   ci, ni)
-            replaceIndex!(completed_H[row+1], ci, ni)
-        end
-        return store(completed_H) .* store(in_prog_mps)
-    end
+    in_prog_mps          = MPS(Ny, in_progress, 0, Ny + 1)
+    return store(fitPEPSMPO(A, in_progress, ops, col, chi))
 end
 
 function buildLs(A::fPEPS, H; kwargs...)
