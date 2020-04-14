@@ -80,14 +80,28 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
         A_prev_unique  = [setdiff(double_hori_A[row], hori_prev_inds[row]) for row in 1:Ny]
         hori_cmbs      = Vector{ITensor}(undef, Ny)
         hori_cis       = Vector{Index}(undef, Ny)
+        up_inds        = [Index(chi, "Link,u,c$col,r$row") for row in 1:Ny-1]
         for row in 1:Ny
             cmb, ci        = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
             hori_cmbs[row] = cmb 
             hori_cis[row]  = ci
         end
-        guess = randomMPS(hori_cis, chi)
+        #@timeit "randomMPS" begin
+        #    guess = randomMPS(hori_cis, chi)
+        #end
+        guess = MPS(Ny)
         for row in 1:Ny
-            guess[row] *= hori_cmbs[row]
+            if row == 1
+                #guess[row] = randomITensor(IndexSet(hori_cis[row], up_inds[row]))
+                guess[row] = randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row]))
+            elseif 1 < row < Ny
+                #guess[row] = randomITensor(IndexSet(hori_cis[row], up_inds[row-1], up_inds[row]))
+                guess[row] = randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row-1], up_inds[row]))
+            else
+                #guess[row] = randomITensor(IndexSet(hori_cis[row], up_inds[row-1]))
+                guess[row] = randomITensor(IndexSet(A_prev_unique[row]..., up_inds[row-1]))
+            end
+            #guess[row] *= hori_cmbs[row]
         end
         if is_cu
             guess = cuMPS(guess)
