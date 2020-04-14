@@ -1,10 +1,10 @@
 using BenchmarkTools, PEPS, ITensors, ITensorsGPU
 
 suite = BenchmarkGroup()
-Nx = 6
-Ny = 6
-χ  = 4
-D  = 4
+Nx = 4
+Ny = 4
+χ  = 6
+D  = 6
 sites = siteinds("S=1/2",Nx*Ny)
 A     = cufPEPS(randomfPEPS(sites, Nx, Ny, mindim=D))
 H     = PEPS.makeCuH_XXZ(Nx, Ny, 1.0)
