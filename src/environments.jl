@@ -169,25 +169,10 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
             Hs[ii][row] *= hori_cmbs[row]
         end
     end
-    for ii in 1:length(Hs)
-        #=for row in 1:Ny-1
-            bad_ind = commonind(Hs[ii][row], Hs[ii][row+1])
-            @show bad_ind
-            replaceind!(Hs[ii][row], bad_ind, up_inds[row])
-            replaceind!(Hs[ii][row+1], bad_ind, up_inds[row])
-        end
-        #orthogonalize!(Hs[ii], 1)
-        @show Hs[ii][1]
-        @show Hs[ii][2]
-        println()=#
-    end
     H_overall       = sum(Hs; cutoff=cutoff, maxdim=chi)
     for row in 1:Ny
         H_overall[row] *= hori_cmbs[row]
     end
-    #=@show H_overall[1]
-    @show H_overall[2]
-    flush(stdout)=#
     @debug "Summed Hs, maxdim=$maxdim"
     side_H          = side == :left ? H[:, col] : H[:, col - 1]
     side_H_terms    = getDirectional(vcat(side_H...), Horizontal)
@@ -206,14 +191,10 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
                               col::Int;
                               kwargs...)
     Ny, Nx        = size(A)
-    chi::Int       = get(kwargs, :env_maxdim, 1)
-    #println("A row 1:")
-    #@show A[1, col]
+    chi::Int      = get(kwargs, :env_maxdim, 1)
     @timeit "build new_I and new_H" begin
         new_I = buildNewI(A, prev_Env.I, col, chi)
         new_H = buildNewI(A, prev_Env.H, col, chi)
-        #println("result in new_H 1:")
-        #@show new_H[1]
     end
     @debug "Built new I and H"
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
@@ -263,13 +244,6 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
                 new_H_mps[ii][row] *= hori_cmbs[row]
             end
         end
-        #=for ii in 1:length(new_H_mps)
-            for row in 1:Ny-1
-                bad_ind = commonind(new_H_mps[ii][row], new_H_mps[ii][row+1])
-                replaceind!(new_H_mps[ii][row], bad_ind, up_inds[row])
-                replaceind!(new_H_mps[ii][row+1], bad_ind, up_inds[row])
-            end
-        end=#
         H_overall    = sum(new_H_mps; cutoff=cutoff, maxdim=chi)
         for row in 1:Ny
             H_overall[row] *= hori_cmbs[row]
