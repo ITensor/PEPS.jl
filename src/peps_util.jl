@@ -1096,14 +1096,14 @@ function sweepColumn(A::fPEPS,
     Ny, Nx = size(A)
     @debug "Beginning intraColumnGauge for col $col" 
     A = intraColumnGauge(A, col; kwargs...)
-    #=if col == div(Nx,2)
+    if col == div(Nx,2)
         L_s = buildLs(A, H; kwargs...)
         R_s = buildRs(A, H; kwargs...)
         EAncEnvs = buildAncs(A, L_s[col - 1], R_s[col + 1], H, col)
         N, E = measureEnergy(A, L_s[col - 1], R_s[col + 1], EAncEnvs, H, 1, col)
         println("Energy at MID: ", E/(Nx*Ny))
         println("Nx: ", Nx)
-    end=#
+    end
     @debug "Beginning buildAncs for col $col" 
     AncEnvs = buildAncs(A, L, R, H, col)
     @inbounds for row in 1:Ny
