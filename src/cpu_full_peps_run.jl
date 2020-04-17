@@ -119,3 +119,4 @@ A, tS, bytes, gctime, memallocs = @timed PEPS.doSweeps(A, Ls, Rs, H; mindim=D, m
 println("Done sweeping GPU $tS")
 flush(stdout)
 flush(io)
+print_timer()

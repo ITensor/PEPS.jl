@@ -86,22 +86,26 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
             hori_cmbs[row] = cmb 
             hori_cis[row]  = ci
         end
-        #@timeit "randomMPS" begin
-        #    guess = randomMPS(hori_cis, chi)
-        #end
-        guess = MPS(Ny)
-        for row in 1:Ny
-            row_inds = nothing
-            if row == 1
-                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row])
-            elseif 1 < row < Ny
-                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1], up_inds[row])
-            else
-                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1])
+        #=@timeit "randomMPS" begin
+            guess = randomMPS(hori_cis, chi)
+            for row in 1:Ny
+                guess[row] *= hori_cmbs[row]
             end
-            #guess[row] = is_cu ? randomCuITensor(row_inds) : randomITensor(row_inds) 
-            guess[row] = randomITensor(row_inds) 
-            #guess[row] *= hori_cmbs[row]
+        end=#
+        @timeit "randomITensor" begin
+            guess = MPS(Ny)
+            for row in 1:Ny
+                row_inds = nothing
+                if row == 1
+                    row_inds = IndexSet(A_prev_unique[row]..., up_inds[row])
+                elseif 1 < row < Ny
+                    row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1], up_inds[row])
+                else
+                    row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1])
+                end
+                #guess[row] = is_cu ? randomCuITensor(row_inds) : randomITensor(row_inds) 
+                guess[row] = randomITensor(row_inds) 
+            end
         end
         if is_cu
             guess = cuMPS(guess)
