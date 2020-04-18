@@ -1,3 +1,4 @@
+suite["guess"]    = BenchmarkGroup(["inds", "MPS", "ITensors"])
 suite["edge"]     = BenchmarkGroup(["identity", "field", "vertical", "horizontal"])
 suite["interior"] = BenchmarkGroup(["identity", "prev_ham", "field", "vertical", "connect", "generate"])
 suite["overall"]  = BenchmarkGroup(["left", "right"])
@@ -27,6 +28,10 @@ suite["edge"]["horizontal"] = @benchmarkable [PEPS.generateEdgeDanglingBonds($A,
 col            = 2 
 left_H_terms   = PEPS.getDirectional(H[1], PEPS.Horizontal)
 Ledge          = buildEdgeEnvironment(A, H, left_H_terms,  :left, 1; env_maxdim=χ, cutoff=0.0)
+
+suite["guess"]["inds"]     = @benchmarkable PEPS.getGuessInds($A, $Ledge.I, $col)
+suite["guess"]["ITensors"] = @benchmarkable PEPS.initGuessRandomITensor($A, $Ledge.I, $col, $χ)
+suite["guess"]["MPS"]      = @benchmarkable PEPS.initGuessRandomMPS($A, $Ledge.I, $col, $χ)
 
 suite["interior"]["identity"] = @benchmarkable PEPS.buildNewI($A, $Ledge.I, $col, $χ)
 suite["interior"]["prev_ham"] = @benchmarkable PEPS.buildNewI($A, $Ledge.H, $col, $χ)

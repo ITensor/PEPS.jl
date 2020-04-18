@@ -69,48 +69,64 @@ function fitPEPSMPOold(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITenso
     return guess
 end
 
-# now with two-site
-function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor}, col::Int, chi::Int)
-    Ny, Nx = size(A)
-    is_cu  = is_gpu(A)
-    # need to figure out index structure of guess!
-    up_inds = [Index(chi, "Link,c$col,r$row,u") for row in 1:Ny-1]
+function getGuessInds(A::fPEPS, prev_mps, col::Int)
     # guess should have the indices of A going left/right that prev_mps does not have
-    @timeit "make guess" begin
-        A_prev_common  = [commonind(A[row, col], prev_mps[row]) for row in 1:Ny]
-        hori_A_inds    = [inds(A[row, col], "Link, r") for row in 1:Ny]
-        hori_prev_inds = [inds(prev_mps[row], "Link, r") for row in 1:Ny]
-        double_hori_A  = [IndexSet(hori_A_inds[row], prime(hori_A_inds[row])) for row in 1:Ny]
-        A_prev_unique  = [setdiff(double_hori_A[row], hori_prev_inds[row]) for row in 1:Ny]
+    Ny, Nx = size(A)
+    A_prev_common  = [commonind(A[row, col], prev_mps[row]) for row in 1:Ny]
+    hori_A_inds    = [inds(A[row, col], "Link, r") for row in 1:Ny]
+    hori_prev_inds = [inds(prev_mps[row], "Link, r") for row in 1:Ny]
+    double_hori_A  = [IndexSet(hori_A_inds[row], prime(hori_A_inds[row])) for row in 1:Ny]
+    A_prev_unique  = [setdiff(double_hori_A[row], hori_prev_inds[row]) for row in 1:Ny]
+    return A_prev_unique
+end
+
+function initGuessRandomMPS(A::fPEPS, prev_mps, col::Int, chi::Int)
+    @timeit "randomMPS" begin
+        Ny, Nx = size(A)
+        A_prev_unique  = getGuessInds(A, prev_mps, col)
         hori_cmbs      = Vector{ITensor}(undef, Ny)
         hori_cis       = Vector{Index}(undef, Ny)
-        up_inds        = [Index(chi, "Link,u,c$col,r$row") for row in 1:Ny-1]
         for row in 1:Ny
             cmb, ci        = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
             hori_cmbs[row] = cmb 
             hori_cis[row]  = ci
         end
-        #=@timeit "randomMPS" begin
-            guess = randomMPS(hori_cis, chi)
-            for row in 1:Ny
-                guess[row] *= hori_cmbs[row]
-            end
-        end=#
-        @timeit "randomITensor" begin
-            guess = MPS(Ny)
-            for row in 1:Ny
-                row_inds = nothing
-                if row == 1
-                    row_inds = IndexSet(A_prev_unique[row]..., up_inds[row])
-                elseif 1 < row < Ny
-                    row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1], up_inds[row])
-                else
-                    row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1])
-                end
-                #guess[row] = is_cu ? randomCuITensor(row_inds) : randomITensor(row_inds) 
-                guess[row] = randomITensor(row_inds) 
-            end
+        guess = randomMPS(hori_cis, chi)
+        for row in 1:Ny
+            guess[row] *= hori_cmbs[row]
         end
+    end
+    return guess
+end
+
+function initGuessRandomITensor(A::fPEPS, prev_mps, col::Int, chi::Int)
+    @timeit "randomITensor" begin
+        Ny, Nx = size(A)
+        A_prev_unique  = getGuessInds(A, prev_mps, col)
+        guess = MPS(Ny)
+        up_inds        = [Index(chi, "Link,u,c$col,r$row") for row in 1:Ny-1]
+        for row in 1:Ny
+            row_inds = nothing
+            if row == 1
+                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row])
+            elseif 1 < row < Ny
+                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1], up_inds[row])
+            else
+                row_inds = IndexSet(A_prev_unique[row]..., up_inds[row-1])
+            end
+            #guess[row] = is_cu ? randomCuITensor(row_inds) : randomITensor(row_inds) 
+            guess[row] = randomITensor(row_inds) 
+        end
+    end
+    return guess
+end
+
+# now with two-site
+function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor}, col::Int, chi::Int)
+    Ny, Nx = size(A)
+    is_cu  = is_gpu(A)
+    @timeit "make guess" begin
+        guess = initGuessRandomITensor(A, prev_mps, col, chi)
         if is_cu
             guess = cuMPS(guess)
         end
