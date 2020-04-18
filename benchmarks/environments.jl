@@ -5,7 +5,6 @@ suite["overall"]  = BenchmarkGroup(["left", "right"])
 cutoff     = 0.0 
 maxdim     = D 
 env_maxdim = χ 
-#=
 dummy = Vector{ITensor}(undef, Ny)
 for row in 1:Ny
     dummy[row]  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
@@ -41,12 +40,12 @@ side_H_terms  = PEPS.getDirectional(vcat(side_H...), PEPS.Horizontal)
 H_term_count  = 1 + length(field_H_terms) + length(vert_H_terms)
 H_term_count += length(side_H_terms)
 new_H_mps     = Vector{MPS}(undef, H_term_count)
-suite["interior"]["vertical"] = @benchmarkable [PEPS.buildNewVerticals($A, $Ledge.I, $vert_H_terms[vert_op], $col, $χ) for vert_op in 1:length($vert_H_terms)]
-suite["interior"]["field"]    = @benchmarkable [PEPS.buildNewFields($A, $Ledge.I, $field_H_terms[field_op], $col, $χ) for field_op in 1:length($field_H_terms)]
+suite["interior"]["vertical"] = @benchmarkable [PEPS.buildNewVerticals($A, $vert_H_terms[vert_op], $Ledge.I, $col, $χ) for vert_op in 1:length($vert_H_terms)]
+suite["interior"]["field"]    = @benchmarkable [PEPS.buildNewFields($A, $field_H_terms[field_op], $Ledge.I, $col, $χ) for field_op in 1:length($field_H_terms)]
 connect_H     = side_H_terms
 suite["interior"]["connect"]  = @benchmarkable [PEPS.connectDanglingBonds($A, $connect_H[cc], $Ledge.InProgress[:, cc], :left, $col; env_maxdim=$env_maxdim, cutoff=$cutoff) for cc in 1:length($connect_H)]
 gen_H_terms   = hori_H_terms
 suite["interior"]["generate"] = @benchmarkable [PEPS.generateNextDanglingBonds($A, $gen_H_terms[side_term], $Ledge.I, :left, $col; env_maxdim=$env_maxdim, cutoff=$cutoff) for side_term in 1:length($gen_H_terms)]
-=#
+
 suite["overall"]["left"]  = @benchmarkable buildLs($A, $H; env_maxdim=$env_maxdim, cutoff=$cutoff)
 suite["overall"]["right"] = @benchmarkable buildRs($A, $H; env_maxdim=$env_maxdim, cutoff=$cutoff)

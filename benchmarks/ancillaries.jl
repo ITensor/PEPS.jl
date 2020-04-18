@@ -1,7 +1,6 @@
 suite["ancillaries"] = BenchmarkGroup(["identity", "field", "vertical", "left", "right"])
 Ls   = buildLs(A, H; env_maxdim=χ, maxdim=D, cutoff=0.0)
 Rs   = buildRs(A, H; env_maxdim=χ, maxdim=D, cutoff=0.0)
-col   = 3
 dummy = cuITensor(1.0)
 suite["ancillaries"]["identity"] = @benchmarkable PEPS.makeAncillaryIs($A, $Ls[$col-1], $Rs[$col+1], $col)
 vH = PEPS.getDirectional(vcat(H[:, col]...), PEPS.Vertical)

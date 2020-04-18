@@ -11,7 +11,7 @@ H     = PEPS.makeH_XXZ(Nx, Ny, 1.0)
 is_cu = PEPS.is_gpu(A)
 include("environments.jl")
 include("hamiltonian.jl")
-#include("observables.jl")
+include("ancillaries.jl")
 include("gauge.jl")
 
 tune!(suite)
