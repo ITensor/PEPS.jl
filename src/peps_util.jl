@@ -180,7 +180,7 @@ function reconnect(combiner_ind::Index, environment::ITensor)
     new_combiner, combined_ind  = combiner(IndexSet(combiner_ind, prime(combiner_ind)), tags="Site")
     combiner_transfer           = δ(combined_ind, environment_combiner)
     #return new_combiner*combiner_transfer
-    replaceindex!(new_combiner, combined_ind, environment_combiner)
+    replaceind!(new_combiner, combined_ind, environment_combiner)
     return new_combiner
 end
 
@@ -229,8 +229,8 @@ function nonWorkRow(A::fPEPS,
     ops     = deepcopy(H.ops)
     @inbounds for op_ind in 1:length(ops)
         as = firstind(A[op_rows[op_ind][1][1], col], "Site")
-        ops[op_ind] = replaceindex!(ops[op_ind], H.site_ind, as)
-        ops[op_ind] = replaceindex!(ops[op_ind], H.site_ind', as')
+        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind, as)
+        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind', as')
     end
     op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     op_ind = findfirst( x -> x == row, op_rows)
@@ -274,8 +274,8 @@ function sum_rows_in_col(A::fPEPS,
     @inbounds for op_ind in 1:length(ops)
         this_A = A[op_rows[op_ind][1][1], col]
         as = firstind(this_A, "Site")
-        ops[op_ind] = replaceindex!(ops[op_ind], H.site_ind, as)
-        ops[op_ind] = replaceindex!(ops[op_ind], H.site_ind', as')
+        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind, as)
+        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind', as')
     end
     nwrs  = is_cu ? cuITensor(1.0) : ITensor(1.0)
     nwrs_ = is_cu ? cuITensor(1.0) : ITensor(1.0)
@@ -443,11 +443,11 @@ function verticalTerms(A::fPEPS,
             AIL = low_row > 0 ? AI[:below][low_row] : dummy 
             AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
             sA   = firstind(A[op_row_a, col], "Site")
-            op_a = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
-            op_a = replaceindex!(op_a, H[opcode].site_ind', sA')
+            op_a = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+            op_a = replaceind!(op_a, H[opcode].site_ind', sA')
             sB   = firstind(A[op_row_b, col], "Site")
-            op_b = replaceindex!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
-            op_b = replaceindex!(op_b, H[opcode].site_ind', sB')
+            op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
+            op_b = replaceind!(op_b, H[opcode].site_ind', sB')
             thisVert = AIH
             if col > 1
                 ci  = commonind(A[op_row_b, col], A[op_row_b, col-1])
@@ -490,11 +490,11 @@ function verticalTerms(A::fPEPS,
                 thisVert *= msi
             end
             sA = firstind(A[op_row_a, col], "Site")
-            op_a = replaceindex!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
-            op_a = replaceindex!(op_a, H[opcode].site_ind', sA')
+            op_a = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+            op_a = replaceind!(op_a, H[opcode].site_ind', sA')
             sB = firstind(A[op_row_b, col], "Site")
-            op_b = replaceindex!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
-            op_b = replaceindex!(op_b, H[opcode].site_ind', sB')
+            op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
+            op_b = replaceind!(op_b, H[opcode].site_ind', sB')
             thisVert *= A[op_row_a, col] * op_a * dag(A[op_row_a, col])'
             if col > 1
                 ci  = commonind(A[op_row_b, col], A[op_row_b, col-1])
@@ -577,8 +577,8 @@ function fieldTerms(A::fPEPS,
             thisField *= AIH
             sA = firstind(A[row, col], "Site")
             op = copy(H[opcode].ops[1])
-            op = replaceindex!(op, H[opcode].site_ind, sA) 
-            op = replaceindex!(op, H[opcode].site_ind', sA')
+            op = replaceind!(op, H[opcode].site_ind, sA) 
+            op = replaceind!(op, H[opcode].site_ind', sA')
             thisField *= op
         end
         @assert hasinds(inds(thisField), AAinds)
@@ -603,8 +603,8 @@ function connectLeftTerms(A::fPEPS,
         op_row_b = H[opcode].sites[2][1]
         op_b = copy(H[opcode].ops[2])
         as   = firstind(A[op_row_b, col], "Site")
-        op_b = replaceindex!(op_b, H[opcode].site_ind, as)
-        op_b = replaceindex!(op_b, H[opcode].site_ind', as')
+        op_b = replaceind!(op_b, H[opcode].site_ind, as)
+        op_b = replaceind!(op_b, H[opcode].site_ind', as')
         thisHori = is_cu ? cuITensor(1.0) : ITensor(1.0)
         if op_row_b != row
             local ancL, I
@@ -665,8 +665,8 @@ function connectRightTerms(A::fPEPS,
         op_row_a = H[opcode].sites[1][1]
         op_a = copy(H[opcode].ops[1])
         as   = firstind(A[op_row_a, col], "Site")
-        op_a = replaceindex!(op_a, H[opcode].site_ind, as)
-        op_a = replaceindex!(op_a, H[opcode].site_ind', as')
+        op_a = replaceind!(op_a, H[opcode].site_ind, as)
+        op_a = replaceind!(op_a, H[opcode].site_ind', as')
         thisHori = is_cu ? cuITensor(1.0) : ITensor(1.0)
         if op_row_a != row
             local ancR, I
@@ -853,10 +853,10 @@ function simpleUpdate(A::fPEPS, col::Int, next_col::Int, H; kwargs...)::fPEPS
             horiH      = getDirectional(vcat(H[:, hori_col]...), Horizontal)
             horiH      = filter(x->x.sites[1][1] == row, horiH)
             for hH in horiH
-                op_a = replaceindex!(copy(hH.ops[1]), hH.site_ind, hori_col == col ? si_a : si_b)
-                op_a = replaceindex!(op_a, hH.site_ind', hori_col == col ? si_a' : si_b')
-                op_b = replaceindex!(copy(hH.ops[2]), hH.site_ind, hori_col == col ? si_b : si_a)
-                op_b = replaceindex!(op_b, hH.site_ind', hori_col == col ? si_b' : si_a')
+                op_a = replaceind!(copy(hH.ops[1]), hH.site_ind, hori_col == col ? si_a : si_b)
+                op_a = replaceind!(op_a, hH.site_ind', hori_col == col ? si_a' : si_b')
+                op_b = replaceind!(copy(hH.ops[2]), hH.site_ind, hori_col == col ? si_b : si_a)
+                op_b = replaceind!(op_b, hH.site_ind', hori_col == col ? si_b' : si_a')
                 Hab_hori = ITensors.dim(Hab_hori) < 2 ? op_a * op_b : Hab_hori + op_a * op_b
             end
             cmb, ci   = combiner(findinds(Hab_hori, 0), tags="hab,Site")
@@ -884,10 +884,10 @@ function simpleUpdate(A::fPEPS, col::Int, next_col::Int, H; kwargs...)::fPEPS
             vertH      = getDirectional(vcat(H[:, col]...), Vertical)
             vertH      = filter(x->x.sites[1][1] == row, vertH)
             for vH in vertH
-                op_a = replaceindex!(copy(vH.ops[1]), vH.site_ind, si_a)
-                op_a = replaceindex!(op_a, vH.site_ind', si_a')
-                op_b = replaceindex!(copy(vH.ops[2]), vH.site_ind, si_b)
-                op_b = replaceindex!(op_b, vH.site_ind', si_b')
+                op_a = replaceind!(copy(vH.ops[1]), vH.site_ind, si_a)
+                op_a = replaceind!(op_a, vH.site_ind', si_a')
+                op_b = replaceind!(copy(vH.ops[2]), vH.site_ind, si_b)
+                op_b = replaceind!(op_b, vH.site_ind', si_b')
                 Hab_vert = ITensors.dim(Hab_vert) < 2 ? op_a * op_b : Hab_vert + op_a * op_b
             end
             cmb, ci   = combiner(findinds(Hab_vert, 0), tags="hab,Site")
@@ -1051,10 +1051,10 @@ function optimizeLocalH(A::fPEPS,
             Ris     = uniqueinds(inds(svdA), Lis) 
             U, S, V = svd(svdA, Ris; kwargs...)
             new_ci  = commonind(V, S)
-            replaceindex!(V, new_ci, old_ci)
+            replaceind!(V, new_ci, old_ci)
             A[row, col]    = V*cmb 
             newU = S*U*A[row+1, col]
-            replaceindex!(newU, new_ci, old_ci)
+            replaceind!(newU, new_ci, old_ci)
             A[row+1, col] = newU
             if row < Ny - 1
                 nI    = spinI(firstind(A[row+1, col], "Site"); is_gpu=is_cu)

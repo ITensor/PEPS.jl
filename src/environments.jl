@@ -4,6 +4,10 @@ struct Environments
     InProgress::Matrix{ITensor}
 end
 
+function Base.copy(E::Environments)
+    return Environments(copy(E.I), copy(E.H), copy(E.InProgress))
+end
+
 function fitPEPSMPOold(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor}, col::Int, chi::Int)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A)
