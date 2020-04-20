@@ -87,7 +87,7 @@ function randomfPEPS(sites, Nx::Int, Ny::Int; mindim::Int=1)
 end
 
 is_gpu(A::fPEPS)    = all(is_gpu.(A[:,:]))
-is_gpu(A::ITensor) = (data(store(A)) isa CuArray)
+is_gpu(A::ITensor) = (NDTensors.data(store(A)) isa CuArray)
 
 include("environments.jl")
 include("ancillaries.jl")
