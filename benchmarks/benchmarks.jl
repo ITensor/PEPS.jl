@@ -16,4 +16,4 @@ include("gauge.jl")
 
 tune!(suite)
 results = run(suite, verbose=true, seconds=20)
-display(results)
+display(median(results))
