@@ -171,14 +171,15 @@ end
 
 function combine(Aorig::ITensor, Anext::ITensor, tags::String)::ITensor
     ci        = commonind(Aorig, Anext)
-    cmb, cmbi = combiner(IndexSet(ci, prime(ci)), tags=tags)
-    return cmb
+    return combiner(IndexSet(ci, prime(ci)), tags=tags)
 end
 
 function reconnect(combiner_ind::Index, environment::ITensor)
-    environment_combiner        = firstind(environment, "Site")
-    new_combiner, combined_ind  = combiner(IndexSet(combiner_ind, prime(combiner_ind)), tags="Site")
-    combiner_transfer           = δ(combined_ind, environment_combiner)
+    environment_combiner = firstind(environment, "Site")
+    new_combiner         = combiner(IndexSet(combiner_ind, prime(combiner_ind)), tags="Site")
+    combined_ind         = combinedind(new_combiner)
+    combiner_transfer    = δ(combined_ind, environment_combiner)
+    
     #return new_combiner*combiner_transfer
     replaceind!(new_combiner, combined_ind, environment_combiner)
     return new_combiner
@@ -816,18 +817,18 @@ function intraColumnGauge(A::fPEPS, col::Int; kwargs...)::fPEPS
         @debug "\tBeginning intraColumnGauge for col $col row $row"
         cmb_is   = IndexSet(firstind(A[row, col], "Site"))
         if col > 1
-            cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col - 1]))
+            cmb_is = IndexSet(cmb_is..., commonind(A[row, col], A[row, col - 1]))
         end
         if col < Nx
-            cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col + 1]))
+            cmb_is = IndexSet(cmb_is..., commonind(A[row, col], A[row, col + 1]))
         end
-        cmb, ci = combiner(cmb_is, tags="CMB")
-        Lis     = IndexSet(ci) #cmb_is
+        cmb = combiner(cmb_is, tags="CMB")
+        Li  = combinedind(cmb) #cmb_is
         if row < Ny 
-            Lis = IndexSet(Lis, commonind(A[row, col], A[row + 1, col]))
+            Lis = IndexSet(Li, commonind(A[row, col], A[row + 1, col]))
         end
         Ac = A[row, col]*cmb
-        U, S, V = svd(Ac, Lis; kwargs...)
+        U, S, V = svd(Ac, Li; kwargs...)
         A[row, col]   = U*cmb
         A[row-1, col] *= (S*V)
     end
@@ -859,7 +860,8 @@ function simpleUpdate(A::fPEPS, col::Int, next_col::Int, H; kwargs...)::fPEPS
                 op_b = replaceind!(op_b, hH.site_ind', hori_col == col ? si_b' : si_a')
                 Hab_hori = ITensors.dim(Hab_hori) < 2 ? op_a * op_b : Hab_hori + op_a * op_b
             end
-            cmb, ci   = combiner(findinds(Hab_hori, 0), tags="hab,Site")
+            cmb       = combiner(findinds(Hab_hori, 0), tags="hab,Site")
+            ci        = combinedind(cmb)
             Hab_hori *= cmb
             Hab_hori *= cmb'
             Hab_mat   = is_cu ? matrix(collect(Hab_hori)) : matrix(Hab_hori)
@@ -890,7 +892,8 @@ function simpleUpdate(A::fPEPS, col::Int, next_col::Int, H; kwargs...)::fPEPS
                 op_b = replaceind!(op_b, vH.site_ind', si_b')
                 Hab_vert = ITensors.dim(Hab_vert) < 2 ? op_a * op_b : Hab_vert + op_a * op_b
             end
-            cmb, ci   = combiner(findinds(Hab_vert, 0), tags="hab,Site")
+            cmb       = combiner(findinds(Hab_vert, 0), tags="hab,Site")
+            ci        = combinedind(cmb)
             Hab_vert *= cmb
             Hab_vert *= cmb'
             Hab_mat   = is_cu ? matrix(collect(Hab_vert)) : matrix(Hab_vert)
@@ -1036,15 +1039,16 @@ function optimizeLocalH(A::fPEPS,
             @debug "\tRestoring intraColumnGauge for col $col row $row"
             cmb_is     = IndexSet(firstind(A[row, col], "Site"))
             if col > 1
-                cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col - 1]))
+                cmb_is = IndexSet(cmb_is..., commonind(A[row, col], A[row, col - 1]))
             end
             if col < Nx
-                cmb_is = IndexSet(cmb_is, commonind(A[row, col], A[row, col + 1]))
+                cmb_is = IndexSet(cmb_is..., commonind(A[row, col], A[row, col + 1]))
             end
-            cmb, ci = combiner(cmb_is, tags="CMB")
+            cmb     = combiner(cmb_is, tags="CMB")
+            ci      = combinedind(cmb)
             Lis     = IndexSet(ci) #cmb_is 
             if row > 1
-                Lis = IndexSet(Lis, commonind(A[row, col], A[row - 1, col]))
+                Lis = IndexSet(Lis..., commonind(A[row, col], A[row - 1, col]))
             end
             old_ci  = commonind(A[row, col], A[row+1, col])
             svdA    = new_A*cmb

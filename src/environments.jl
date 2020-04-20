@@ -22,9 +22,9 @@ function fitPEPSMPOold(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITenso
     hori_cmbs      = Vector{ITensor}(undef, Ny)
     hori_cis       = Vector{Index}(undef, Ny)
     for row in 1:Ny
-        cmb, ci        = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
+        cmb            = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
         hori_cmbs[row] = cmb 
-        hori_cis[row]  = ci
+        hori_cis[row]  = combinedind(cmb)
     end
     guess = randomMPS(hori_cis, chi)
     for row in 1:Ny
@@ -75,7 +75,7 @@ function getGuessInds(A::fPEPS, prev_mps, col::Int)
     A_prev_common  = [commonind(A[row, col], prev_mps[row]) for row in 1:Ny]
     hori_A_inds    = [inds(A[row, col], "Link, r") for row in 1:Ny]
     hori_prev_inds = [inds(prev_mps[row], "Link, r") for row in 1:Ny]
-    double_hori_A  = [IndexSet(hori_A_inds[row], prime(hori_A_inds[row])) for row in 1:Ny]
+    double_hori_A  = [IndexSet(hori_A_inds[row]..., prime(hori_A_inds[row])...) for row in 1:Ny]
     A_prev_unique  = [setdiff(double_hori_A[row], hori_prev_inds[row]) for row in 1:Ny]
     return A_prev_unique
 end
@@ -87,9 +87,9 @@ function initGuessRandomMPS(A::fPEPS, prev_mps, col::Int, chi::Int)
         hori_cmbs      = Vector{ITensor}(undef, Ny)
         hori_cis       = Vector{Index}(undef, Ny)
         @inbounds for row in 1:Ny
-            cmb, ci        = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
+            cmb            = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
             hori_cmbs[row] = cmb 
-            hori_cis[row]  = ci
+            hori_cis[row]  = combinedind(cmb) 
         end
         guess = randomMPS(hori_cis, chi)
         @inbounds for row in 1:Ny
@@ -201,8 +201,7 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
     up_inds   = [Index(chi, "Link,c$col,r$row,u") for row in 1:Ny-1]
     @inbounds for row in 1:Ny
         hori_inds[row] = intersect(map(x->inds(x[row], "Link,r"), Hs))[1]
-        cmb, ci        = combiner(hori_inds[row], tags="r$row,CMB,Site")
-        hori_cmbs[row] = cmb 
+        hori_cmbs[row] = combiner(hori_inds[row], tags="r$row,CMB,Site")
         for ii in 1:length(Hs)
             Hs[ii][row] *= hori_cmbs[row]
         end
@@ -267,8 +266,7 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
         up_inds   = [Index(chi, "Link,c$col,r$row,u") for row in 1:Ny-1]
         for row in 1:Ny
             hori_inds[row] = intersect(map(x->inds(x[row], "Link,r"), new_H_mps))[1]
-            cmb, ci = combiner(hori_inds[row], tags="r$row,CMB,Site")
-            hori_cmbs[row] = cmb 
+            hori_cmbs[row] = combiner(hori_inds[row], tags="r$row,CMB,Site")
             for ii in 1:length(new_H_mps)
                 new_H_mps[ii][row] *= hori_cmbs[row]
             end
@@ -301,7 +299,7 @@ function buildNewVerticals(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
     ops[vertical_row_a] = replaceind!(ops[vertical_row_a], H.site_ind', col_site_inds[vertical_row_a]')
     ops[vertical_row_b] = replaceind!(copy(H.ops[2]), H.site_ind, col_site_inds[vertical_row_b])
     ops[vertical_row_b] = replaceind!(ops[vertical_row_b], H.site_ind', col_site_inds[vertical_row_b]')
-    return fitPEPSMPO(A, store(prev_I), ops, col, chi)
+    return fitPEPSMPO(A, data(prev_I), ops, col, chi)
 end
 
 function buildNewFields(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
@@ -312,7 +310,7 @@ function buildNewFields(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
     field_row      = H.sites[1][1]
     ops[field_row] = replaceind!(copy(H.ops[1]), H.site_ind, col_site_inds[field_row])
     ops[field_row] = replaceind!(ops[field_row], H.site_ind', col_site_inds[field_row]')
-    return fitPEPSMPO(A, store(prev_I), ops, col, chi)
+    return fitPEPSMPO(A, data(prev_I), ops, col, chi)
 end
 
 function buildNewI(A::fPEPS, prev_I::MPS, col::Int, chi::Int)::MPS
@@ -320,7 +318,7 @@ function buildNewI(A::fPEPS, prev_I::MPS, col::Int, chi::Int)::MPS
     is_cu          = is_gpu(A)
     col_site_inds  = [firstind(A[row, col], "Site") for row in 1:Ny]
     ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
-    return fitPEPSMPO(A, store(prev_I), ops, col, chi)
+    return fitPEPSMPO(A, data(prev_I), ops, col, chi)
 end
 
 function generateEdgeDanglingBonds(A::fPEPS, H, side::Symbol, col::Int, chi::Int)::Vector{ITensor}
@@ -333,7 +331,7 @@ function generateEdgeDanglingBonds(A::fPEPS, H, side::Symbol, col::Int, chi::Int
     ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
     ops[op_row]    = replaceind!(copy(H_op), H.site_ind, col_site_inds[op_row]) 
     ops[op_row]    = replaceind!(ops[op_row], H.site_ind', col_site_inds[op_row]') 
-    return store(fitPEPSMPO(A, dummy, ops, col, chi))
+    return data(fitPEPSMPO(A, dummy, ops, col, chi))
 end
 
 function generateNextDanglingBonds(A::fPEPS,
@@ -351,7 +349,7 @@ function generateNextDanglingBonds(A::fPEPS,
     ops             = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
     ops[op_row]     = replaceind!(copy(H_op), H.site_ind, col_site_inds[op_row]) 
     ops[op_row]     = replaceind!(ops[op_row], H.site_ind', col_site_inds[op_row]')
-    return store(fitPEPSMPO(A, store(Ident), ops, col, chi))
+    return data(fitPEPSMPO(A, data(Ident), ops, col, chi))
 end
 
 function connectDanglingBonds(A::fPEPS,
@@ -372,7 +370,7 @@ function connectDanglingBonds(A::fPEPS,
     ops[application_row] = replaceind!(copy(op), oldH.site_ind, col_site_inds[application_row])
     ops[application_row] = replaceind!(ops[application_row], oldH.site_ind', col_site_inds[application_row]')
     in_prog_mps          = MPS(Ny, in_progress, 0, Ny + 1)
-    return store(fitPEPSMPO(A, in_progress, ops, col, chi))
+    return data(fitPEPSMPO(A, in_progress, ops, col, chi))
 end
 
 function buildLs(A::fPEPS, H; kwargs...)

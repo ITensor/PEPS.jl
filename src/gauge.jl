@@ -87,9 +87,9 @@ function orthogonalize_Q!(Envs, Q, A, QR_inds, next_col_inds, dummy_nexts, col, 
         end
         AQinds     = IndexSet(firstind(A[row, col], "Site")) 
         if two_sided
-            AQinds = IndexSet(AQinds, commonind(inds(A[row, col], "Link"), inds(Q[row], "Link"))) # prev_col_ind
+            AQinds = IndexSet(AQinds..., commonind(inds(A[row, col], "Link"), inds(Q[row], "Link"))) # prev_col_ind
         end
-        cmb_l[row] = combiner(AQinds, tags="Site,AQ,r$row")[1]
+        cmb_l[row] = combiner(AQinds, tags="Site,AQ,r$row")
         Ampo[row]  = A[row, col] * cmb_l[row]
         Ampo[row]  = replaceind!(Ampo[row], next_col_inds[row], dummy_nexts[row])
         Q[row]    *= cmb_l[row]
@@ -191,9 +191,9 @@ function gaugeColumn( A::fPEPS, col::Int, side::Symbol; kwargs...)
             for row in 1:Ny
                 cmb_inds_r = cmb_inds_[row] 
                 if 0 < nn_col < Nx + 1
-                    cmb_inds_r = IndexSet(cmb_inds_[row], commonind(A[row, next_col], A[row, nn_col]))
+                    cmb_inds_r = IndexSet(cmb_inds_[row]..., commonind(A[row, next_col], A[row, nn_col]))
                 end
-                cmb_r[row] = combiner(cmb_inds_r, tags="Site,CMB,c$col,r$row")[1]
+                cmb_r[row] = combiner(cmb_inds_r, tags="Site,CMB,c$col,r$row")
                 next_col_As[row] *= cmb_r[row]
                 if (side == :left && !left_edge) || (side == :right && !right_edge)
                     next_col_As[row] = replaceind!(next_col_As[row], next_col_inds[row], dummy_next_inds[row])
