@@ -823,12 +823,12 @@ function intraColumnGauge(A::fPEPS, col::Int; kwargs...)::fPEPS
             cmb_is = IndexSet(cmb_is..., commonind(A[row, col], A[row, col + 1]))
         end
         cmb = combiner(cmb_is, tags="CMB")
-        Li  = combinedind(cmb) #cmb_is
+        Lis = IndexSet(combinedind(cmb)) #cmb_is
         if row < Ny 
-            Lis = IndexSet(Li, commonind(A[row, col], A[row + 1, col]))
+            Lis = IndexSet(Lis..., commonind(A[row, col], A[row + 1, col]))
         end
         Ac = A[row, col]*cmb
-        U, S, V = svd(Ac, Li; kwargs...)
+        U, S, V = svd(Ac, Lis; kwargs...)
         A[row, col]   = U*cmb
         A[row-1, col] *= (S*V)
     end
