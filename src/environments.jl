@@ -8,67 +8,6 @@ function Base.copy(E::Environments)
     return Environments(copy(E.I), copy(E.H), copy(E.InProgress))
 end
 
-function fitPEPSMPOold(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor}, col::Int, chi::Int)
-    Ny, Nx = size(A)
-    is_cu  = is_gpu(A)
-    # need to figure out index structure of guess!
-    up_inds = [Index(chi, "Link,c$col,r$row,u") for row in 1:Ny-1]
-    # guess should have the indices of A going left/right that prev_mps does not have
-    A_prev_common  = [commonind(A[row, col], prev_mps[row]) for row in 1:Ny]
-    hori_A_inds    = [inds(A[row, col], "Link, r") for row in 1:Ny]
-    hori_prev_inds = [inds(prev_mps[row], "Link, r") for row in 1:Ny]
-    double_hori_A  = [IndexSet(hori_A_inds[row], prime(hori_A_inds[row])) for row in 1:Ny]
-    A_prev_unique  = [setdiff(double_hori_A[row], hori_prev_inds[row]) for row in 1:Ny]
-    hori_cmbs      = Vector{ITensor}(undef, Ny)
-    hori_cis       = Vector{Index}(undef, Ny)
-    for row in 1:Ny
-        cmb            = combiner(A_prev_unique[row]..., tags="r$row,CMB,Site")
-        hori_cmbs[row] = cmb 
-        hori_cis[row]  = combinedind(cmb)
-    end
-    guess = randomMPS(hori_cis, chi)
-    for row in 1:Ny
-        guess[row] *= hori_cmbs[row]
-    end
-    if is_cu
-        guess = cuMPS(guess)
-    end
-    #orthogonalize!(guess, 1)
-    for sweep in 1:2
-        orthogonalize!(guess, isodd(sweep) ? 1 : Ny)
-        order = isodd(sweep) ? (1:Ny) : reverse(1:Ny)
-        for row in order
-            # construct environment for the row, have to do this every time
-            Env_above = is_cu ? cuITensor(1.0) : ITensor(1.0)
-            Env_below = is_cu ? cuITensor(1.0) : ITensor(1.0)
-            for env_row in 1:row-1
-                Env_below *= prev_mps[env_row]
-                Env_below *= A[env_row, col]
-                Env_below *= ops[env_row]
-                Env_below *= dag(prime(A[env_row, col]))
-                Env_below *= guess[env_row]
-            end
-            for env_row in reverse(row+1:Ny)
-                Env_above *= prev_mps[env_row]
-                Env_above *= A[env_row, col]
-                Env_above *= ops[env_row]
-                Env_above *= dag(prime(A[env_row, col]))
-                Env_above *= guess[env_row]
-            end
-            Env  = Env_below
-            Env *= prev_mps[row]
-            Env *= A[row, col]
-            Env *= ops[row]
-            Env *= dag(prime(A[row, col]))
-            Env *= Env_above
-            # update guess at row
-            guess[row] = copy(Env)
-        end
-    end
-    orthogonalize!(guess, 1)
-    return guess
-end
-
 function getGuessInds(A::fPEPS, prev_mps, col::Int)
     # guess should have the indices of A going left/right that prev_mps does not have
     Ny, Nx = size(A)
@@ -121,30 +60,95 @@ function initGuessRandomITensor(A::fPEPS, prev_mps, col::Int, chi::Int)
     return guess
 end
 
+function constructEnvsAbove(A::fPEPS, guess::MPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor}, col::Int, sweep::Int)
+    is_cu  = is_gpu(A)
+    Ny, Nx = size(A)
+    order  = isodd(sweep) ? (1:Ny) : reverse(1:Ny)
+    dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    Envs_above = Vector{ITensor}(undef, Ny+1)
+    Envs_above[end]  = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    @inbounds for (ii, env_row) in enumerate(reverse(order))
+        tmp = A[env_row, col]
+        tmp *= ops[env_row]
+        tmp *= prev_mps[env_row]
+        next_row = isodd(sweep) ? env_row + 1 : env_row - 1
+        Env_above  = next_row > 0 ? copy(Envs_above[next_row]) : dummy 
+        Env_above *= tmp
+        Env_above *= dag(prime(A[env_row, col]))
+        Env_above *= guess[env_row]
+        Envs_above[env_row] = Env_above 
+    end
+    return Envs_above
+end
+
+function fitPEPSMPOold(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor}, col::Int, chi::Int)
+    Ny, Nx = size(A)
+    is_cu  = is_gpu(A)
+    @timeit "make guess" begin
+        guess::MPS = initGuessRandomMPS(A, prev_mps, col, chi)
+        if is_cu
+            guess = cuMPS(guess)
+        end
+    end
+    #@show inner(guess, guess)
+    dummy = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    for sweep in 1:2
+        order      = isodd(sweep) ? (1:Ny) : reverse(1:Ny)
+        Envs_above = constructEnvsAbove(A, guess, prev_mps, ops, col, sweep)
+        Env_below  = is_cu ? cuITensor(1.0) : ITensor(1.0)
+        @inbounds for row in order
+            # construct environment for the row, have to do this every time
+            @timeit "build row Env" begin
+                Env  = copy(Env_below)
+                tmp  = A[row, col]
+                tmp *= ops[row]
+                tmp *= prev_mps[row]
+                Env *= tmp
+                Env *= dag(prime(A[row, col]))
+                Env_below  = copy(Env)
+                next_row = isodd(sweep) ? row+1 : row -1
+                Env *= next_row > 0 ? copy(Envs_above[next_row]) : dummy 
+                #guess[row] = copy(Env)
+                #Env_below  *= guess[row] 
+            end
+            # get l-inds for svd
+            @timeit "do SVD" begin
+                if isodd(sweep) && row < Ny
+                    svd_linds     = setdiff(inds(guess[row]),IndexSet(commonind(guess[row], guess[row+1])))
+                    tsvd          = svd(Env, svd_linds, mindim=chi, maxdim=chi)
+                    # update guess at row
+                    guess[row]    = tsvd.U
+                    guess[row+1] *= tsvd.S*tsvd.V
+                elseif !isodd(sweep) && row > 1
+                    svd_linds     = setdiff(inds(guess[row]),IndexSet(commonind(guess[row], guess[row-1])))
+                    tsvd          = svd(Env, svd_linds, mindim=chi, maxdim=chi)
+                    # update guess at row
+                    guess[row]    = tsvd.U
+                    guess[row-1] *= tsvd.S*tsvd.V
+                else
+                    # update guess at row
+                    guess[row]   = copy(Env) 
+                end
+                Env_below    *= guess[row]
+            end
+        end
+    end
+    return guess
+end
+
 # now with two-site
 function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor}, col::Int, chi::Int)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A)
     @timeit "make guess" begin
-        guess::MPS = initGuessRandomITensor(A, prev_mps, col, chi)
+        guess::MPS = initGuessRandomMPS(A, prev_mps, col, chi)
         if is_cu
             guess = cuMPS(guess)
         end
     end
     for sweep in 1:1
         @timeit "make Envs_above" begin
-            Envs_above = Vector{ITensor}(undef, Ny+1)
-            Envs_above[end]  = is_cu ? cuITensor(1.0) : ITensor(1.0)
-            @inbounds for (ii, env_row) in enumerate(reverse(1:Ny))
-                tmp = A[env_row, col]
-                tmp *= ops[env_row]
-                tmp *= prev_mps[env_row]
-                Env_above  = copy(Envs_above[env_row+1])
-                Env_above *= tmp
-                Env_above *= dag(prime(A[env_row, col]))
-                Env_above *= guess[env_row]
-                Envs_above[env_row] = Env_above 
-            end
+            Envs_above = constructEnvsAbove(A, guess, prev_mps, ops, col, sweep)
         end
         order     = isodd(sweep) ? (1:Ny-1) : reverse(1:Ny-1)
         Env_below = is_cu ? cuITensor(1.0) : ITensor(1.0)
@@ -299,6 +303,7 @@ function buildNewVerticals(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
     ops[vertical_row_a] = replaceind!(ops[vertical_row_a], H.site_ind', col_site_inds[vertical_row_a]')
     ops[vertical_row_b] = replaceind!(copy(H.ops[2]), H.site_ind, col_site_inds[vertical_row_b])
     ops[vertical_row_b] = replaceind!(ops[vertical_row_b], H.site_ind', col_site_inds[vertical_row_b]')
+    #return fitPEPSMPOold(A, data(prev_I), ops, col, chi)
     return fitPEPSMPO(A, data(prev_I), ops, col, chi)
 end
 
@@ -310,6 +315,7 @@ function buildNewFields(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
     field_row      = H.sites[1][1]
     ops[field_row] = replaceind!(copy(H.ops[1]), H.site_ind, col_site_inds[field_row])
     ops[field_row] = replaceind!(ops[field_row], H.site_ind', col_site_inds[field_row]')
+    #return fitPEPSMPOold(A, data(prev_I), ops, col, chi)
     return fitPEPSMPO(A, data(prev_I), ops, col, chi)
 end
 
@@ -318,6 +324,7 @@ function buildNewI(A::fPEPS, prev_I::MPS, col::Int, chi::Int)::MPS
     is_cu          = is_gpu(A)
     col_site_inds  = [firstind(A[row, col], "Site") for row in 1:Ny]
     ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
+    #return fitPEPSMPOold(A, data(prev_I), ops, col, chi)
     return fitPEPSMPO(A, data(prev_I), ops, col, chi)
 end
 
@@ -331,6 +338,7 @@ function generateEdgeDanglingBonds(A::fPEPS, H, side::Symbol, col::Int, chi::Int
     ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
     ops[op_row]    = replaceind!(copy(H_op), H.site_ind, col_site_inds[op_row]) 
     ops[op_row]    = replaceind!(ops[op_row], H.site_ind', col_site_inds[op_row]') 
+    #return data(fitPEPSMPOold(A, dummy, ops, col, chi))
     return data(fitPEPSMPO(A, dummy, ops, col, chi))
 end
 
@@ -349,6 +357,7 @@ function generateNextDanglingBonds(A::fPEPS,
     ops             = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
     ops[op_row]     = replaceind!(copy(H_op), H.site_ind, col_site_inds[op_row]) 
     ops[op_row]     = replaceind!(ops[op_row], H.site_ind', col_site_inds[op_row]')
+    #return data(fitPEPSMPOold(A, data(Ident), ops, col, chi))
     return data(fitPEPSMPO(A, data(Ident), ops, col, chi))
 end
 
@@ -370,6 +379,7 @@ function connectDanglingBonds(A::fPEPS,
     ops[application_row] = replaceind!(copy(op), oldH.site_ind, col_site_inds[application_row])
     ops[application_row] = replaceind!(ops[application_row], oldH.site_ind', col_site_inds[application_row]')
     in_prog_mps          = MPS(Ny, in_progress, 0, Ny + 1)
+    #return data(fitPEPSMPOold(A, in_progress, ops, col, chi))
     return data(fitPEPSMPO(A, in_progress, ops, col, chi))
 end
 
