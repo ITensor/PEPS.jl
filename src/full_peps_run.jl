@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate("..")
-using TimerOutputs, Statistics, ArgParse, CUDAnative, Distributions
-include("peps_util.jl")
+using PEPS, ITensorsGPU, ITensors
+using TimerOutputs, Statistics, ArgParse, CUDAnative, Distributions, Logging, CuArrays
 
 s = ArgParseSettings()
 @add_arg_table! s begin
@@ -80,13 +80,13 @@ sites = siteinds("S=1/2",Nx*Ny)
 
 # disallow scalar indexing on GPU, which is very slow 
 CuArrays.allowscalar(false)
-A = checkerboardPEPS(sites, Nx, Ny, mindim=D)
+A = checkerboardfPEPS(sites, Nx, Ny, mindim=D)
 # to the user, these appear as normal ITensors, but they have on-device storage
 # Julia can detect this at runtime and appropriately dispatch to CUTENSOR
-cA = cuPEPS(A)
+cA = cufPEPS(A)
 H  = nothing
 if parsed_args["model"] == "XXZ"
-    H  = makeCuH_XXZ(Nx, Ny, J)
+    H  = PEPS.makeCuH_XXZ(Nx, Ny, J)
 elseif parsed_args["model"] == "Ising"
     hz = parsed_args["hz"]
     hx = parsed_args["hx"]
@@ -105,7 +105,7 @@ elseif parsed_args["model"] == "Ising"
         dz = Uniform(-hz, hz)
         hz = rand(dz, Ny, Nx)
     end
-    H  = makeCuH_Ising(Nx, Ny, J, hx, hz)
+    H  = PEPS.makeCuH_Ising(Nx, Ny, J, hx, hz)
 end
 @info "Built cA and H"
 # run heaviest functions one time to make Julia compile everything
@@ -113,11 +113,11 @@ end
 Ls = buildLs(cA, H; mindim=D, maxdim=D)
 @info "Built first Ls"
 #Rs = buildRs(cA, H; mindim=D, maxdim=D)
-Rs = Vector{Environments}(undef, Nx)
+Rs = Vector{PEPS.Environments}(undef, Nx)
 @info "Built first Rs"
 
 # actual profiling run
-cA, tS, bytes, gctime, memallocs = @timed doSweeps(cA, Ls, Rs, H; mindim=D, maxdim=D, simple_update_cutoff=parsed_args["simple_update_cutoff"], sweep_count=parsed_args["sweep_count"], cutoff=0.0, env_maxdim=χ, do_mag=parsed_args["do_mag"], prefix=parsed_args["prefix"])
+cA, tS, bytes, gctime, memallocs = @timed PEPS.doSweeps(cA, Ls, Rs, H; mindim=D, maxdim=D, simple_update_cutoff=parsed_args["simple_update_cutoff"], sweep_count=parsed_args["sweep_count"], cutoff=0.0, env_maxdim=χ, do_mag=parsed_args["do_mag"], prefix=parsed_args["prefix"])
 println("Done sweeping GPU $tS")
 flush(stdout)
 flush(io)

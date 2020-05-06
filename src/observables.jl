@@ -1,4 +1,4 @@
-function measureXmag(A::PEPS, 
+function measureXmag(A::fPEPS, 
                      Ls::Vector{Environments}, 
                      Rs::Vector{Environments}, 
                      col; 
@@ -26,7 +26,7 @@ function measureXmag(A::PEPS,
     return measuredX
 end
 
-function measureZmag(A::PEPS, 
+function measureZmag(A::fPEPS, 
                      Ls::Vector{Environments}, 
                      Rs::Vector{Environments}, 
                      col; 
@@ -55,7 +55,7 @@ function measureZmag(A::PEPS,
     return measuredZ
 end
 
-function measureSmagVertical(A::PEPS, 
+function measureSmagVertical(A::fPEPS, 
                              Ls::Vector{Environments}, 
                              Rs::Vector{Environments}, 
                              col; 
@@ -96,7 +96,7 @@ function measureSmagVertical(A::PEPS,
     return measuredSV
 end
 
-function measureSmagHorizontal(A::PEPS, 
+function measureSmagHorizontal(A::fPEPS, 
                                Ls::Vector{Environments}, 
                                Rs::Vector{Environments}, 
                                col; 
