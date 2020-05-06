@@ -74,8 +74,8 @@ function constructEnvsAbove(A::fPEPS, guess::MPS, prev_mps::Vector{<:ITensor}, o
         next_row = isodd(sweep) ? env_row + 1 : env_row - 1
         Env_above  = next_row > 0 ? copy(Envs_above[next_row]) : dummy 
         Env_above *= tmp
-        Env_above *= guess[env_row]
         Env_above *= dag(prime(A[env_row, col]))
+        Env_above *= guess[env_row]
         Envs_above[env_row] = Env_above 
     end
     return Envs_above
@@ -103,8 +103,8 @@ function fitPEPSMPOold(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITenso
                 tmp  = A[row, col]
                 tmp *= ops[row]
                 tmp *= prev_mps[row]
-                Env *= tmp
                 Env *= dag(prime(A[row, col]))
+                Env *= tmp
                 Env_below  = copy(Env)
                 next_row = isodd(sweep) ? row+1 : row -1
                 Env *= next_row > 0 ? copy(Envs_above[next_row]) : dummy 
