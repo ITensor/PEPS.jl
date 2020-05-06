@@ -74,8 +74,8 @@ function constructEnvsAbove(A::fPEPS, guess::MPS, prev_mps::Vector{<:ITensor}, o
         next_row = isodd(sweep) ? env_row + 1 : env_row - 1
         Env_above  = next_row > 0 ? copy(Envs_above[next_row]) : dummy 
         Env_above *= tmp
-        Env_above *= dag(prime(A[env_row, col]))
         Env_above *= guess[env_row]
+        Env_above *= dag(prime(A[env_row, col]))
         Envs_above[env_row] = Env_above 
     end
     return Envs_above
