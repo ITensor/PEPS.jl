@@ -201,21 +201,10 @@ function buildN(A::fPEPS,
     if row < Ny
         workingN *= IEnvs[:above][end - row]
     end
-    if col > 1
-        ci = commonind(A[row, col], A[row, col-1])
-        workingN *= multiply_side_ident(A[row, col], ci, L.I[row])
-    end
+    workingN *= L.I[row]
     workingN *= ϕ
-    if col < Nx
-        ci = commonind(A[row, col], A[row, col+1])
-        workingN *= multiply_side_ident(A[row, col], ci, R.I[row]) 
-    end
+    workingN *= R.I[row]
     return workingN
-end
-
-
-function multiply_side_ident(A::ITensor, ci::Index, side_I::ITensor)
-    return side_I 
 end
 
 function nonWorkRow(A::fPEPS, 
@@ -235,17 +224,10 @@ function nonWorkRow(A::fPEPS,
     end
     op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     op_ind = findfirst( x -> x == row, op_rows)
-    AA = A[row, col] * op * dag(A[row, col])'
-    if col > 1
-        ci = commonind(A[row, col], A[row, col-1])
-        msi = multiply_side_ident(A[row, col], ci, L.I[row])
-        AA *= msi
-    end
-    if col < Nx
-        ci = commonind(A[row, col], A[row, col+1])
-        msi = multiply_side_ident(A[row, col], ci, R.I[row])
-        AA *= msi 
-    end
+    AA *= L.I[row]
+    AA *= A[row, col] * op
+    AA *= R.I[row]
+    AA *= dag(A[row, col])'
     return AA
 end
 
@@ -284,30 +266,14 @@ function sum_rows_in_col(A::fPEPS,
     if row == op_row_a
         Hterm = IA
         Hterm *= nonWorkRow(A, L, R, H, op_row_b, col)
-        if col > 1
-            ci  = commonind(A[row, col], A[row, col-1])
-            msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-            Hterm *= msi 
-        end
-        if col < Nx
-            ci  = commonind(A[row, col], A[row, col+1])
-            msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-            Hterm *= msi
-        end
+        Hterm *= L.I[row] 
+        Hterm *= R.I[row] 
         Hterm *= IB
     else
         Hterm = IB
         Hterm *= nonWorkRow(A, L, R, H, op_row_a, col)
-        if col > 1
-            ci  = commonind(A[row, col], A[row, col-1])
-            msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-            Hterm *= msi 
-        end
-        if col < Nx
-            ci  = commonind(A[row, col], A[row, col+1])
-            msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-            Hterm *= msi
-        end
+        Hterm *= L.I[row] 
+        Hterm *= R.I[row] 
         Hterm *= IA
     end
     op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
@@ -425,17 +391,9 @@ function verticalTerms(A::fPEPS,
                 I = row < Ny ? AI[:above][end - row] : dummy
             end
             thisVert *= V
-            if col > 1
-                ci = commonind(A[row, col], A[row, col-1])
-                msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-                thisVert *= msi
-            end
+            thisVert *= L.I[row]
             thisVert *= ϕ
-            if col < Nx
-                ci = commonind(A[row, col], A[row, col+1])
-                msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-                thisVert *= msi 
-            end
+            thisVert *= R.I[row]
             thisVert *= I
             thisVert *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         elseif row == op_row_a
@@ -449,29 +407,14 @@ function verticalTerms(A::fPEPS,
             sB   = firstind(A[op_row_b, col], "Site")
             op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
             op_b = replaceind!(op_b, H[opcode].site_ind', sB')
-            thisVert = AIH
-            if col > 1
-                ci  = commonind(A[op_row_b, col], A[op_row_b, col-1])
-                msi = multiply_side_ident(A[op_row_b, col], ci, copy(L.I[op_row_b]))
-                thisVert *= msi 
-            end
-            thisVert *= A[op_row_b, col] * op_b * dag(A[op_row_b, col])'
-            if col < Nx
-                ci  = commonind(A[op_row_b, col], A[op_row_b, col+1])
-                msi = multiply_side_ident(A[op_row_b, col], ci, copy(R.I[op_row_b]))
-                thisVert *= msi
-            end
-            if col > 1
-                ci  = commonind(A[op_row_a, col], A[op_row_a, col-1])
-                msi = multiply_side_ident(A[op_row_a, col], ci, copy(L.I[op_row_a]))
-                thisVert *= msi 
-            end
+            thisVert  = AIH
+            thisVert *= L.I[op_row_b] 
+            thisVert *= A[op_row_b, col] * op_b
+            thisVert *= R.I[op_row_b] 
+            thisVert *= dag(A[op_row_b, col])'
+            thisVert *= L.I[op_row_a] 
             thisVert *= ϕ
-            if col < Nx
-                ci  = commonind(A[op_row_a, col], A[op_row_a, col+1])
-                msi = multiply_side_ident(A[op_row_a, col], ci, copy(R.I[op_row_a]))
-                thisVert *= msi
-            end
+            thisVert *= R.I[op_row_a] 
             thisVert *= AIL 
             thisVert *= op_a
         elseif row == op_row_b
@@ -479,35 +422,20 @@ function verticalTerms(A::fPEPS,
             high_row = op_row_b
             AIL = low_row > 0 ? AI[:below][low_row] : dummy 
             AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
-            thisVert = AIL
-            if col > 1
-                ci  = commonind(A[op_row_a, col], A[op_row_a, col-1])
-                msi = multiply_side_ident(A[op_row_a, col], ci, copy(L.I[op_row_a]))
-                thisVert *= msi 
-            end
-            if col < Nx
-                ci  = commonind(A[op_row_a, col], A[op_row_a, col+1])
-                msi = multiply_side_ident(A[op_row_a, col], ci, copy(R.I[op_row_a]))
-                thisVert *= msi
-            end
             sA = firstind(A[op_row_a, col], "Site")
             op_a = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
             op_a = replaceind!(op_a, H[opcode].site_ind', sA')
             sB = firstind(A[op_row_b, col], "Site")
             op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
             op_b = replaceind!(op_b, H[opcode].site_ind', sB')
-            thisVert *= A[op_row_a, col] * op_a * dag(A[op_row_a, col])'
-            if col > 1
-                ci  = commonind(A[op_row_b, col], A[op_row_b, col-1])
-                msi = multiply_side_ident(A[op_row_b, col], ci, copy(L.I[op_row_b]))
-                thisVert *= msi 
-            end
+            thisVert  = AIL
+            thisVert *= L.I[op_row_a] 
+            thisVert *= A[op_row_a, col] * op_a 
+            thisVert *= R.I[op_row_a] 
+            thisVert *= dag(A[op_row_a, col])'
+            thisVert *= L.I[op_row_b] 
             thisVert *= ϕ
-            if col < Nx
-                ci  = commonind(A[op_row_b, col], A[op_row_b, col+1])
-                msi = multiply_side_ident(A[op_row_b, col], ci, copy(R.I[op_row_b]))
-                thisVert *= msi
-            end
+            thisVert *= R.I[op_row_b] 
             thisVert *= AIH 
             thisVert *= op_b
         end
@@ -547,15 +475,9 @@ function fieldTerms(A::fPEPS,
                 I = row < Ny ? AI[:above][end - row] : dummy 
             end
             thisField *= F
-            if col > 1
-                ci = commonind(A[row, col], A[row, col-1])
-                thisField *= multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-            end
+            thisField *= L.I[row]
             thisField *= ϕ
-            if col < Nx
-                ci = commonind(A[row, col], A[row, col+1])
-                thisField *= multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-            end
+            thisField *= R.I[row]
             thisField *= I
             thisField *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
@@ -563,18 +485,10 @@ function fieldTerms(A::fPEPS,
             high_row = op_row
             AIL = low_row > 0   ? AI[:below][low_row]        : dummy 
             AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
-            thisField = AIL
-            if col > 1
-                ci  = commonind(A[row, col], A[row, col-1])
-                msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-                thisField *= msi 
-            end
+            thisField  = AIL
+            thisField *= L.I[row]
             thisField *= ϕ
-            if col < Nx
-                ci  = commonind(A[row, col], A[row, col+1])
-                msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-                thisField *= msi
-            end
+            thisField *= R.I[row]
             thisField *= AIH
             sA = firstind(A[row, col], "Site")
             op = copy(H[opcode].ops[1])
@@ -616,13 +530,10 @@ function connectLeftTerms(A::fPEPS,
                 ancL = AL[:below][opcode][row - 1]
                 I = row < Ny ? AL[:above][opcode][end - row] : dummy
             end
-            thisHori = ancL
+            thisHori  = ancL
             thisHori *= L.InProgress[row, opcode]
             thisHori *= ϕ
-            if col < Nx
-                ci = commonind(A[row, col], A[row, col+1])
-                thisHori *= multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-            end
+            thisHori *= R.I[row]
             thisHori *= I
             thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
@@ -631,18 +542,13 @@ function connectLeftTerms(A::fPEPS,
             if low_row >= 1
                 thisHori *= AL[:below][opcode][low_row]
             end
+            thisHori *= R.I[row]
+            thisHori *= ϕ
+            thisHori *= L.InProgress[row, opcode]
+            thisHori *= op_b
             if high_row <= Ny
                 thisHori *= AL[:above][opcode][end - high_row + 1]
             end
-            if col < Nx
-                ci = commonind(A[row, col], A[row, col+1])
-                thisHori *= multiply_side_ident(A[row, col], ci, R.I[row])
-            end
-            uih = uniqueinds(thisHori, L.InProgress[row, opcode])
-            uil = uniqueinds(L.InProgress[row, opcode], thisHori)
-            thisHori *= L.InProgress[row, opcode]
-            thisHori *= ϕ
-            thisHori *= op_b
         end
         @assert hasinds(inds(thisHori), AAinds)
         @assert hasinds(AAinds, inds(thisHori))
@@ -681,10 +587,7 @@ function connectRightTerms(A::fPEPS,
             thisHori = ancR
             thisHori *= R.InProgress[row, opcode]
             thisHori *= ϕ
-            if col > 1
-                ci = commonind(A[row, col], A[row, col-1])
-                thisHori *= multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-            end
+            thisHori *= L.I[row]
             thisHori *= I
             thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
@@ -693,16 +596,13 @@ function connectRightTerms(A::fPEPS,
             if low_row >= 1
                 thisHori *= AR[:below][opcode][low_row]
             end
-            if high_row <= Ny
-                thisHori *= AR[:above][opcode][end - high_row + 1]
-            end
-            if col > 1
-                ci = commonind(A[row, col], A[row, col-1])
-                thisHori *= multiply_side_ident(A[row, col], ci, L.I[row])
-            end
+            thisHori *= L.I[row]
             thisHori *= R.InProgress[row, opcode]
             thisHori *= ϕ
             thisHori *= op_a 
+            if high_row <= Ny
+                thisHori *= AR[:above][opcode][end - high_row + 1]
+            end
         end
         @assert hasinds(inds(thisHori), AAinds)
         @assert hasinds(AAinds, inds(thisHori))
@@ -1063,14 +963,8 @@ function optimizeLocalH(A::fPEPS,
             if row < Ny - 1
                 nI    = spinI(firstind(A[row+1, col], "Site"); is_gpu=is_cu)
                 newAA = A[row+1, col] * nI * dag(A[row+1, col])'
-                if col > 1
-                    ci     = commonind(A[row+1, col], A[row+1, col-1])
-                    newAA *= multiply_side_ident(A[row+1, col], ci, L.I[row+1])
-                end
-                if col < Nx
-                    ci     = commonind(A[row+1, col], A[row+1, col+1])
-                    newAA *= multiply_side_ident(A[row+1, col], ci, R.I[row+1])
-                end
+                newAA *= L.I[row+1]
+                newAA *= R.I[row+1]
                 AncEnvs[:I][:above][end - row] = newAA * AncEnvs[:I][:above][end - row - 1]
             end
         else
