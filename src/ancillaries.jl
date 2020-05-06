@@ -1,17 +1,18 @@
 function makeAncillaryIs(A::fPEPS, L::Environments, R::Environments, col::Int)
-    Ny, Nx   = size(A)
-    is_cu    = is_gpu(A)
-    dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
-    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
-    ops           = map(x -> spinI(x; is_gpu=is_cu), col_site_inds)
-    ancIs         = Vector{ITensor}(undef, Ny)
-    ancI          = copy(dummy)
-    for row in reverse(2:Ny)
-        ancI     *= L.I[row] * A[row, col]
-        ancI     *= ops[row] * dag(prime(A[row, col]))
-        ancI     *= R.I[row]
-        ancIs[row-1] = copy(ancI)
+    Ny, Nx         = size(A)
+    is_cu          = is_gpu(A)
+    dummy          = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
+    col_site_inds  = [firstind(x, "Site") for x in A[:, col]]
+    ops            = map(x -> spinI(x; is_gpu=is_cu), col_site_inds)
+    ancIs          = Vector{ITensor}(undef, Ny)
+    ancI           = copy(dummy)
+    for row in reverse(1:Ny)
+        ancI      *= L.I[row] * A[row, col]
+        ancI      *= ops[row] * dag(prime(A[row, col]))
+        ancI      *= R.I[row]
+        ancIs[row] = copy(ancI)
     end
+    reverse!(ancIs)
     return ancIs
 end
 
@@ -22,7 +23,7 @@ function updateAncillaryIs(A::fPEPS, Ibelow::Vector{ITensor}, L::Environments, R
     op      = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     AA      = row > 1 ? copy(Ibelow[row - 1]) : dummy 
     AA     *= L.I[row] * A[row, col]
-    AA     *= ops[row] * dag(prime(A[row, col]))
+    AA     *= op * dag(prime(A[row, col]))
     AA     *= R.I[row]
     Ibelow[row] = AA
     return Ibelow
@@ -41,13 +42,13 @@ function makeAncillaryFs(A::fPEPS, L::Environments, R::Environments, H, col::Int
         ops[op_row] = replaceind!(copy(ops[op_row]), H[opcode].site_ind', col_site_inds[op_row]')
         ancFs       = Vector{ITensor}(undef, Ny)
         ancF        = copy(dummy)
-        for row in reverse(2:Ny)
+        for row in reverse(1:Ny)
             ancF   *= L.I[row] * A[row, col]
             ancF   *= ops[row] * dag(prime(A[row, col]))
             ancF   *= R.I[row]
-            ancFs[row-1] = copy(ancF)
+            ancFs[row] = copy(ancF)
         end
-        Fabove[opcode] .= ancFs
+        Fabove[opcode] .= reverse(ancFs)
     end
     return Fabove
 end
@@ -91,13 +92,13 @@ function makeAncillaryVs(A::fPEPS, L::Environments, R::Environments, H, col::Int
         ops[op_row_b] = replaceind!(ops[op_row_b], H[opcode].site_ind', col_site_inds[op_row_b]')
         ancVs         = Vector{ITensor}(undef, Ny)
         ancV          = copy(dummy)
-        for row in reverse(2:Ny)
+        for row in reverse(1:Ny)
             ancV   *= L.I[row] * A[row, col]
             ancV   *= ops[row] * dag(prime(A[row, col]))
             ancV   *= R.I[row]
-            ancVs[row-1] = copy(ancV)
+            ancVs[row] = copy(ancV)
         end
-        Vabove[opcode] = copy(ancVs) 
+        Vabove[opcode] = reverse(ancVs)
     end
     return Vabove
 end
@@ -157,7 +158,7 @@ function makeAncillarySide(A::fPEPS, EnvIP::Environments, EnvIdent::Environments
             AA *= EnvIP.InProgress[row, opcode]
             AAs[row] = copy(AA)
         end
-        Sabove[opcode] = AAs
+        Sabove[opcode] = reverse(AAs)
     end
     return Sabove
 end
@@ -168,6 +169,7 @@ function updateAncillarySide(A::fPEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::E
     col_site_inds = [firstind(x, "Site") for x in A[:, col]]
     next_col = side == :left ? col + 1 : col - 1
     prev_col = side == :left ? col + 1 : col - 1
+    dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     for opcode in 1:length(H)
         op_row      = side == :left ? H[opcode].sites[2][1] : H[opcode].sites[1][1] 
         ops         = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
