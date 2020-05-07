@@ -198,12 +198,12 @@ function buildN(A::fPEPS,
     if row > 1
         workingN *= IEnvs[:below][row - 1]
     end
-    if row < Ny
-        workingN *= IEnvs[:above][end - row]
-    end
     workingN *= L.I[row]
     workingN *= ϕ
     workingN *= R.I[row]
+    if row < Ny
+        workingN *= IEnvs[:above][end - row]
+    end
     return workingN
 end
 
@@ -239,27 +239,26 @@ function buildHIedge(A::fPEPS,
                      ϕ::ITensor )
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
-    HI     = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IH_a   = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IH_b   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IH     = is_cu ? cuITensor(1.0) : ITensor(1.0)
     next_col = side == :left ? 2 : Nx - 1
     @inbounds for work_row in 1:row-1
-        AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HI *= AA * E.I[work_row]
-        IH *= E.H[work_row] * AA
+        IH_b *= E.H[work_row] * A[work_row, col]
+        IH_b *= dag(prime(A[work_row, col], "Link"))
     end
-    op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
-    op = is_cu ? cuITensor(op) : op
-    HI *= ϕ
-    IH *= ϕ
-    HI *= op
-    IH *= op
-    HI *= E.I[row]
-    IH *= E.H[row]
     @inbounds for work_row in row+1:Ny
-        AA  = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HI *= AA * E.I[work_row]
-        IH *= E.H[work_row] * AA
+        #AA    = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
+        IH_a *= E.H[work_row] * A[work_row, col]
+        IH_a *= dag(prime(A[work_row, col], "Link"))
     end
+    IH *= E.H[row]
+    IH *= IH_b
+    op  = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+    op  = is_cu ? cuITensor(op) : op
+    IH *= ϕ
+    IH *= op
+    IH *= IH_a
     AAinds = inds(prime(ϕ))
     @assert hasinds(inds(IH), AAinds)
     @assert hasinds(AAinds, inds(IH))
@@ -274,48 +273,61 @@ function buildHIs(A::fPEPS,
                   ϕ::ITensor)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
-    col == 1  && return buildHIedge(A, R, row, col, :left, ϕ)
-    col == Nx && return buildHIedge(A, L, row, col, :right, ϕ)
+    @timeit "buildHIedge" begin
+        if col == 1
+            return buildHIedge(A, R, row, col, :left, ϕ)
+        end
+        if col == Nx
+            return buildHIedge(A, L, row, col, :right, ϕ)
+        end
+    end
     HLI_a = is_cu ? cuITensor(1.0) : ITensor(1.0)
     HLI_b = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IHR_a = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IHR_b = is_cu ? cuITensor(1.0) : ITensor(1.0)
     HLI   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IHR   = is_cu ? cuITensor(1.0) : ITensor(1.0)
-    @inbounds for work_row in 1:row-1
-        #AA  = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HLI_b *= L.H[work_row]
-        HLI_b *= A[work_row, col]
-        HLI_b *= R.I[work_row]
-        HLI_b *= dag(prime(A[work_row, col], "Link"))
-        IHR_b *= L.I[work_row]
-        IHR_b *= A[work_row, col]
-        IHR_b *= R.H[work_row]
-        IHR_b *= dag(prime(A[work_row, col], "Link"))
+    @timeit "build HI lower" begin
+        @inbounds for work_row in 1:row-1
+            tL     = A[work_row, col]*L.H[work_row]
+            HLI_b *= tL 
+            HLI_b *= R.I[work_row]
+            HLI_b *= dag(prime(A[work_row, col], "Link"))
+            tR     = A[work_row, col]*R.H[work_row]
+            IHR_b *= tR 
+            IHR_b *= L.I[work_row]
+            IHR_b *= dag(prime(A[work_row, col], "Link"))
+        end
     end
-    HLI  *= L.H[row]
-    HLI  *= ϕ
-    HLI  *= R.I[row]
-    IHR  *= L.I[row]
-    IHR  *= ϕ
-    IHR  *= R.H[row]
-    @inbounds for work_row in reverse(row+1:Ny)
-        HLI_a *= L.H[work_row]
-        HLI_a *= A[work_row, col]
-        HLI_a *= R.I[work_row]
-        HLI_a *= dag(prime(A[work_row, col], "Link"))
-        IHR_a *= L.I[work_row]
-        IHR_a *= A[work_row, col]
-        IHR_a *= R.H[work_row]
-        IHR_a *= dag(prime(A[work_row, col], "Link"))
+    @timeit "build HI upper" begin
+        @inbounds for work_row in reverse(row+1:Ny)
+            tL     = A[work_row, col]*L.H[work_row]
+            HLI_a *= tL 
+            HLI_a *= R.I[work_row]
+            HLI_a *= dag(prime(A[work_row, col], "Link"))
+            tR     = A[work_row, col]*R.H[work_row]
+            IHR_a *= tR 
+            IHR_a *= L.I[work_row]
+            IHR_a *= dag(prime(A[work_row, col], "Link"))
+        end
     end
-    HLI *= HLI_a
-    HLI *= HLI_b
-    IHR *= IHR_a
-    IHR *= IHR_b
-    op   = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
-    HLI *= op
-    IHR *= op
+    @timeit "join up HIs" begin
+        HLI  *= L.H[row]
+        HLI  *= HLI_b
+        HLI  *= ϕ
+        HLI  *= R.I[row]
+        IHR  *= L.I[row]
+        IHR  *= IHR_b
+        IHR  *= ϕ
+        IHR  *= R.H[row]
+        HLI *= HLI_a
+        #HLI *= HLI_b
+        IHR *= IHR_a
+        #IHR *= IHR_b
+        op   = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+        HLI *= op
+        IHR *= op
+    end
     AAinds = inds(prime(ϕ))
     @assert hasinds(inds(IHR), AAinds)
     @assert hasinds(inds(HLI), AAinds)
@@ -775,38 +787,41 @@ function buildAncs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
-    @debug "\tMaking ancillary identity terms for col $col"
-    Ia = makeAncillaryIs(A, L, R, col)
-    Ib = Vector{ITensor}(undef, Ny)
-    Is = (above=Ia, below=Ib)
+    @timeit "makeAncIs" begin
+        Ia = makeAncillaryIs(A, L, R, col)
+        Ib = Vector{ITensor}(undef, Ny)
+        Is = (above=Ia, below=Ib)
+    end
+    @timeit "makeAncVs" begin
+        vH = getDirectional(vcat(H[:, col]...), Vertical)
+        Va = makeAncillaryVs(A, L, R, vH, col)
+        Vb = [Vector{ITensor}() for ii in 1:length(Va)]
+        Vs = (above=Va, below=Vb)
+    end
+    @timeit "makeAncFs" begin
+        fH = getDirectional(vcat(H[:, col]...), Field)
+        Fa = makeAncillaryFs(A, L, R, fH, col)
+        Fb = [Vector{ITensor}() for ii in 1:length(Fa)]
+        Fs = (above=Fa, below=Fb)
 
-    @debug "\tMaking ancillary vertical terms for col $col"
-    vH = getDirectional(vcat(H[:, col]...), Vertical)
-    Va = makeAncillaryVs(A, L, R, vH, col)
-    Vb = [Vector{ITensor}() for ii in 1:length(Va)]
-    Vs = (above=Va, below=Vb)
-
-    @debug "\tMaking ancillary field terms for col $col"
-    fH = getDirectional(vcat(H[:, col]...), Field)
-    Fa = makeAncillaryFs(A, L, R, fH, col)
-    Fb = [Vector{ITensor}() for ii in 1:length(Fa)]
-    Fs = (above=Fa, below=Fb)
-
+    end
     Ls = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
     Rs = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
     if col > 1
-        @debug "\tMaking ancillary left terms for col $col"
-        lH = getDirectional(vcat(H[:, col-1]...), Horizontal)
-        La = makeAncillarySide(A, L, R, lH, col, :left)
-        Lb = [Vector{ITensor}() for ii in  1:length(La)]
-        Ls = (above=La, below=Lb)
+        @timeit "makeAncLs" begin
+            lH = getDirectional(vcat(H[:, col-1]...), Horizontal)
+            La = makeAncillarySide(A, L, R, lH, col, :left)
+            Lb = [Vector{ITensor}() for ii in  1:length(La)]
+            Ls = (above=La, below=Lb)
+        end
     end
     if col < Nx
-        @debug "\tMaking ancillary right terms for col $col"
-        rH = getDirectional(vcat(H[:, col]...), Horizontal)
-        Ra = makeAncillarySide(A, R, L, rH, col, :right)
-        Rb = [Vector{ITensor}() for ii in  1:length(Ra)]
-        Rs = (above=Ra, below=Rb)
+        @timeit "makeAncRs" begin
+            rH = getDirectional(vcat(H[:, col]...), Horizontal)
+            Ra = makeAncillarySide(A, R, L, rH, col, :right)
+            Rb = [Vector{ITensor}() for ii in  1:length(Ra)]
+            Rs = (above=Ra, below=Rb)
+        end
     end
     Ancs = (I=Is, V=Vs, F=Fs, L=Ls, R=Rs)
     return Ancs
@@ -955,8 +970,9 @@ function sweepColumn(A::fPEPS,
                      col::Int; 
                      kwargs...)
     Ny, Nx = size(A)
-    @debug "Beginning intraColumnGauge for col $col" 
-    A = intraColumnGauge(A, col; kwargs...)
+    @timeit "intraColumnGauge" begin
+        A = intraColumnGauge(A, col; kwargs...)
+    end
     if col == div(Nx,2)
         L_s = buildLs(A, H; kwargs...)
         R_s = buildRs(A, H; kwargs...)
@@ -965,14 +981,15 @@ function sweepColumn(A::fPEPS,
         println("Energy at MID: ", E/(Nx*Ny))
         println("Nx: ", Nx)
     end
-    @debug "Beginning buildAncs for col $col" 
+    @debug "Beginning buildAncs for col $col"
     AncEnvs = buildAncs(A, L, R, H, col)
     @inbounds for row in 1:Ny
         if row > 1
-            @debug "Beginning updateAncs for col $col" 
-            AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+            @timeit "updateAncs" begin
+                AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+            end
         end
-        @debug "Beginning optimizing H for col $col" 
+        @debug "Beginning optimizing H for col $col"
         A, AncEnvs = optimizeLocalH(A, L, R, AncEnvs, H, row, col; kwargs...)
     end
     return A

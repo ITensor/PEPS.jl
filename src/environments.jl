@@ -157,10 +157,14 @@ function fitPEPSMPO(A::fPEPS, prev_mps::Vector{<:ITensor}, ops::Vector{ITensor},
             @timeit "build row Env" begin
                 Env  = copy(Env_below)
                 for row_ in (row, row+1)
-                    tmp = A[row_, col]
-                    tmp *= ops[row_]
-                    tmp *= prev_mps[row_]
-                    Env *= tmp
+                    @timeit "build tmp" begin
+                        tmp = A[row_, col]
+                        tmp *= ops[row_]
+                        tmp *= prev_mps[row_]
+                    end
+                    @timeit "tmp into Env" begin
+                        Env *= tmp
+                    end
                     Env *= dag(prime(A[row_, col]))
                     if row_ == row
                         Env_below = copy(Env)
