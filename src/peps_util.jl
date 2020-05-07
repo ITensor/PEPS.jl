@@ -231,60 +231,6 @@ function nonWorkRow(A::fPEPS,
     return AA
 end
 
-function sum_rows_in_col(A::fPEPS, 
-                         L::Environments, 
-                         R::Environments, 
-                         H::Operator, 
-                         row::Int, 
-                         col::Int, 
-                         low_row::Int, 
-                         high_row::Int, 
-                         above::Bool, 
-                         IA::ITensor, 
-                         IB::ITensor)::ITensor
-    Ny, Nx  = size(A)
-    op_rows = H.sites
-    is_cu   = is_gpu(A) 
-    ops     = deepcopy(H.ops)
-    start_row_ = row == op_rows[1][1] ? low_row + 1 : high_row
-    stop_row_  = row == op_rows[1][1] ? high_row : low_row + 1
-    start_row_ = min(start_row_, Ny)
-    stop_row_  = min(stop_row_, Ny)
-    step_row   = row == op_rows[1][1] ? 1 : -1;
-    start_row, stop_row = minmax(start_row_, stop_row_)
-    op_row_a = H.sites[1][1]
-    op_row_b = H.sites[2][1]
-    @inbounds for op_ind in 1:length(ops)
-        this_A = A[op_rows[op_ind][1][1], col]
-        as = firstind(this_A, "Site")
-        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind, as)
-        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind', as')
-    end
-    nwrs  = is_cu ? cuITensor(1.0) : ITensor(1.0)
-    nwrs_ = is_cu ? cuITensor(1.0) : ITensor(1.0)
-    Hterm = ITensor()
-    if row == op_row_a
-        Hterm = IA
-        Hterm *= nonWorkRow(A, L, R, H, op_row_b, col)
-        Hterm *= L.I[row] 
-        Hterm *= R.I[row] 
-        Hterm *= IB
-    else
-        Hterm = IB
-        Hterm *= nonWorkRow(A, L, R, H, op_row_a, col)
-        Hterm *= L.I[row] 
-        Hterm *= R.I[row] 
-        Hterm *= IA
-    end
-    op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
-    op_ind = findfirst( x -> x[1] == row, op_rows)
-    if op_ind > 0 
-        op = ops[op_ind]
-    end
-    Hterm = Hterm*op
-    return Hterm
-end
-
 function buildHIedge(A::fPEPS, 
                      E::Environments, 
                      row::Int, 
@@ -337,16 +283,31 @@ function buildHIs(A::fPEPS,
     HLI   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IHR   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     @inbounds for work_row in 1:row-1
-        AA  = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HLI_b *= L.H[work_row] * AA * R.I[work_row]
-        IHR_b *= L.I[work_row] * AA * R.H[work_row]
+        #AA  = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
+        HLI_b *= L.H[work_row]
+        HLI_b *= A[work_row, col]
+        HLI_b *= R.I[work_row]
+        HLI_b *= dag(prime(A[work_row, col], "Link"))
+        IHR_b *= L.I[work_row]
+        IHR_b *= A[work_row, col]
+        IHR_b *= R.H[work_row]
+        IHR_b *= dag(prime(A[work_row, col], "Link"))
     end
-    HLI  *= L.H[row] * ϕ * R.I[row]
-    IHR  *= L.I[row] * ϕ * R.H[row]
+    HLI  *= L.H[row]
+    HLI  *= ϕ
+    HLI  *= R.I[row]
+    IHR  *= L.I[row]
+    IHR  *= ϕ
+    IHR  *= R.H[row]
     @inbounds for work_row in reverse(row+1:Ny)
-        AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HLI_a *= L.H[work_row] * AA * R.I[work_row]
-        IHR_a *= L.I[work_row] * AA * R.H[work_row]
+        HLI_a *= L.H[work_row]
+        HLI_a *= A[work_row, col]
+        HLI_a *= R.I[work_row]
+        HLI_a *= dag(prime(A[work_row, col], "Link"))
+        IHR_a *= L.I[work_row]
+        IHR_a *= A[work_row, col]
+        IHR_a *= R.H[work_row]
+        IHR_a *= dag(prime(A[work_row, col], "Link"))
     end
     HLI *= HLI_a
     HLI *= HLI_b
@@ -962,10 +923,12 @@ function optimizeLocalH(A::fPEPS,
             A[row+1, col] = newU
             if row < Ny - 1
                 nI    = spinI(firstind(A[row+1, col], "Site"); is_gpu=is_cu)
-                newAA = A[row+1, col] * nI * dag(A[row+1, col])'
+                newAA = AncEnvs[:I][:above][end - row - 1]
                 newAA *= L.I[row+1]
+                newAA *= A[row+1, col] * nI
                 newAA *= R.I[row+1]
-                AncEnvs[:I][:above][end - row] = newAA * AncEnvs[:I][:above][end - row - 1]
+                newAA *= dag(A[row+1, col])'
+                AncEnvs[:I][:above][end - row] = newAA
             end
         else
             A[row, col] = initial_N > 0 ? new_A/√new_N : new_A
