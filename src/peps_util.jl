@@ -198,24 +198,13 @@ function buildN(A::fPEPS,
     if row > 1
         workingN *= IEnvs[:below][row - 1]
     end
+    workingN *= L.I[row]
+    workingN *= ϕ
+    workingN *= R.I[row]
     if row < Ny
         workingN *= IEnvs[:above][end - row]
     end
-    if col > 1
-        ci = commonind(A[row, col], A[row, col-1])
-        workingN *= multiply_side_ident(A[row, col], ci, L.I[row])
-    end
-    workingN *= ϕ
-    if col < Nx
-        ci = commonind(A[row, col], A[row, col+1])
-        workingN *= multiply_side_ident(A[row, col], ci, R.I[row]) 
-    end
     return workingN
-end
-
-
-function multiply_side_ident(A::ITensor, ci::Index, side_I::ITensor)
-    return side_I 
 end
 
 function nonWorkRow(A::fPEPS, 
@@ -235,88 +224,11 @@ function nonWorkRow(A::fPEPS,
     end
     op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
     op_ind = findfirst( x -> x == row, op_rows)
-    AA = A[row, col] * op * dag(A[row, col])'
-    if col > 1
-        ci = commonind(A[row, col], A[row, col-1])
-        msi = multiply_side_ident(A[row, col], ci, L.I[row])
-        AA *= msi
-    end
-    if col < Nx
-        ci = commonind(A[row, col], A[row, col+1])
-        msi = multiply_side_ident(A[row, col], ci, R.I[row])
-        AA *= msi 
-    end
+    AA *= L.I[row]
+    AA *= A[row, col] * op
+    AA *= R.I[row]
+    AA *= dag(A[row, col])'
     return AA
-end
-
-function sum_rows_in_col(A::fPEPS, 
-                         L::Environments, 
-                         R::Environments, 
-                         H::Operator, 
-                         row::Int, 
-                         col::Int, 
-                         low_row::Int, 
-                         high_row::Int, 
-                         above::Bool, 
-                         IA::ITensor, 
-                         IB::ITensor)::ITensor
-    Ny, Nx  = size(A)
-    op_rows = H.sites
-    is_cu   = is_gpu(A) 
-    ops     = deepcopy(H.ops)
-    start_row_ = row == op_rows[1][1] ? low_row + 1 : high_row
-    stop_row_  = row == op_rows[1][1] ? high_row : low_row + 1
-    start_row_ = min(start_row_, Ny)
-    stop_row_  = min(stop_row_, Ny)
-    step_row   = row == op_rows[1][1] ? 1 : -1;
-    start_row, stop_row = minmax(start_row_, stop_row_)
-    op_row_a = H.sites[1][1]
-    op_row_b = H.sites[2][1]
-    @inbounds for op_ind in 1:length(ops)
-        this_A = A[op_rows[op_ind][1][1], col]
-        as = firstind(this_A, "Site")
-        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind, as)
-        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind', as')
-    end
-    nwrs  = is_cu ? cuITensor(1.0) : ITensor(1.0)
-    nwrs_ = is_cu ? cuITensor(1.0) : ITensor(1.0)
-    Hterm = ITensor()
-    if row == op_row_a
-        Hterm = IA
-        Hterm *= nonWorkRow(A, L, R, H, op_row_b, col)
-        if col > 1
-            ci  = commonind(A[row, col], A[row, col-1])
-            msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-            Hterm *= msi 
-        end
-        if col < Nx
-            ci  = commonind(A[row, col], A[row, col+1])
-            msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-            Hterm *= msi
-        end
-        Hterm *= IB
-    else
-        Hterm = IB
-        Hterm *= nonWorkRow(A, L, R, H, op_row_a, col)
-        if col > 1
-            ci  = commonind(A[row, col], A[row, col-1])
-            msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-            Hterm *= msi 
-        end
-        if col < Nx
-            ci  = commonind(A[row, col], A[row, col+1])
-            msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-            Hterm *= msi
-        end
-        Hterm *= IA
-    end
-    op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
-    op_ind = findfirst( x -> x[1] == row, op_rows)
-    if op_ind > 0 
-        op = ops[op_ind]
-    end
-    Hterm = Hterm*op
-    return Hterm
 end
 
 function buildHIedge(A::fPEPS, 
@@ -327,27 +239,26 @@ function buildHIedge(A::fPEPS,
                      ϕ::ITensor )
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
-    HI     = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IH_a   = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IH_b   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IH     = is_cu ? cuITensor(1.0) : ITensor(1.0)
     next_col = side == :left ? 2 : Nx - 1
     @inbounds for work_row in 1:row-1
-        AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HI *= AA * E.I[work_row]
-        IH *= E.H[work_row] * AA
+        IH_b *= E.H[work_row] * A[work_row, col]
+        IH_b *= dag(prime(A[work_row, col], "Link"))
     end
-    op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
-    op = is_cu ? cuITensor(op) : op
-    HI *= ϕ
-    IH *= ϕ
-    HI *= op
-    IH *= op
-    HI *= E.I[row]
-    IH *= E.H[row]
     @inbounds for work_row in row+1:Ny
-        AA  = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HI *= AA * E.I[work_row]
-        IH *= E.H[work_row] * AA
+        #AA    = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
+        IH_a *= E.H[work_row] * A[work_row, col]
+        IH_a *= dag(prime(A[work_row, col], "Link"))
     end
+    IH *= E.H[row]
+    IH *= IH_b
+    op  = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+    op  = is_cu ? cuITensor(op) : op
+    IH *= ϕ
+    IH *= op
+    IH *= IH_a
     AAinds = inds(prime(ϕ))
     @assert hasinds(inds(IH), AAinds)
     @assert hasinds(AAinds, inds(IH))
@@ -362,33 +273,61 @@ function buildHIs(A::fPEPS,
                   ϕ::ITensor)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
-    col == 1  && return buildHIedge(A, R, row, col, :left, ϕ)
-    col == Nx && return buildHIedge(A, L, row, col, :right, ϕ)
+    @timeit "buildHIedge" begin
+        if col == 1
+            return buildHIedge(A, R, row, col, :left, ϕ)
+        end
+        if col == Nx
+            return buildHIedge(A, L, row, col, :right, ϕ)
+        end
+    end
     HLI_a = is_cu ? cuITensor(1.0) : ITensor(1.0)
     HLI_b = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IHR_a = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IHR_b = is_cu ? cuITensor(1.0) : ITensor(1.0)
     HLI   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IHR   = is_cu ? cuITensor(1.0) : ITensor(1.0)
-    @inbounds for work_row in 1:row-1
-        AA  = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HLI_b *= L.H[work_row] * AA * R.I[work_row]
-        IHR_b *= L.I[work_row] * AA * R.H[work_row]
+    @timeit "build HI lower" begin
+        @inbounds for work_row in 1:row-1
+            tL     = A[work_row, col]*L.H[work_row]
+            HLI_b *= tL 
+            HLI_b *= R.I[work_row]
+            HLI_b *= dag(prime(A[work_row, col], "Link"))
+            tR     = A[work_row, col]*R.H[work_row]
+            IHR_b *= tR 
+            IHR_b *= L.I[work_row]
+            IHR_b *= dag(prime(A[work_row, col], "Link"))
+        end
     end
-    HLI  *= L.H[row] * ϕ * R.I[row]
-    IHR  *= L.I[row] * ϕ * R.H[row]
-    @inbounds for work_row in reverse(row+1:Ny)
-        AA = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
-        HLI_a *= L.H[work_row] * AA * R.I[work_row]
-        IHR_a *= L.I[work_row] * AA * R.H[work_row]
+    @timeit "build HI upper" begin
+        @inbounds for work_row in reverse(row+1:Ny)
+            tL     = A[work_row, col]*L.H[work_row]
+            HLI_a *= tL 
+            HLI_a *= R.I[work_row]
+            HLI_a *= dag(prime(A[work_row, col], "Link"))
+            tR     = A[work_row, col]*R.H[work_row]
+            IHR_a *= tR 
+            IHR_a *= L.I[work_row]
+            IHR_a *= dag(prime(A[work_row, col], "Link"))
+        end
     end
-    HLI *= HLI_a
-    HLI *= HLI_b
-    IHR *= IHR_a
-    IHR *= IHR_b
-    op   = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
-    HLI *= op
-    IHR *= op
+    @timeit "join up HIs" begin
+        HLI  *= L.H[row]
+        HLI  *= HLI_b
+        HLI  *= ϕ
+        HLI  *= R.I[row]
+        IHR  *= L.I[row]
+        IHR  *= IHR_b
+        IHR  *= ϕ
+        IHR  *= R.H[row]
+        HLI *= HLI_a
+        #HLI *= HLI_b
+        IHR *= IHR_a
+        #IHR *= IHR_b
+        op   = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+        HLI *= op
+        IHR *= op
+    end
     AAinds = inds(prime(ϕ))
     @assert hasinds(inds(IHR), AAinds)
     @assert hasinds(inds(HLI), AAinds)
@@ -425,17 +364,9 @@ function verticalTerms(A::fPEPS,
                 I = row < Ny ? AI[:above][end - row] : dummy
             end
             thisVert *= V
-            if col > 1
-                ci = commonind(A[row, col], A[row, col-1])
-                msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-                thisVert *= msi
-            end
+            thisVert *= L.I[row]
             thisVert *= ϕ
-            if col < Nx
-                ci = commonind(A[row, col], A[row, col+1])
-                msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-                thisVert *= msi 
-            end
+            thisVert *= R.I[row]
             thisVert *= I
             thisVert *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         elseif row == op_row_a
@@ -449,29 +380,14 @@ function verticalTerms(A::fPEPS,
             sB   = firstind(A[op_row_b, col], "Site")
             op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
             op_b = replaceind!(op_b, H[opcode].site_ind', sB')
-            thisVert = AIH
-            if col > 1
-                ci  = commonind(A[op_row_b, col], A[op_row_b, col-1])
-                msi = multiply_side_ident(A[op_row_b, col], ci, copy(L.I[op_row_b]))
-                thisVert *= msi 
-            end
-            thisVert *= A[op_row_b, col] * op_b * dag(A[op_row_b, col])'
-            if col < Nx
-                ci  = commonind(A[op_row_b, col], A[op_row_b, col+1])
-                msi = multiply_side_ident(A[op_row_b, col], ci, copy(R.I[op_row_b]))
-                thisVert *= msi
-            end
-            if col > 1
-                ci  = commonind(A[op_row_a, col], A[op_row_a, col-1])
-                msi = multiply_side_ident(A[op_row_a, col], ci, copy(L.I[op_row_a]))
-                thisVert *= msi 
-            end
+            thisVert  = AIH
+            thisVert *= L.I[op_row_b] 
+            thisVert *= A[op_row_b, col] * op_b
+            thisVert *= R.I[op_row_b] 
+            thisVert *= dag(A[op_row_b, col])'
+            thisVert *= L.I[op_row_a] 
             thisVert *= ϕ
-            if col < Nx
-                ci  = commonind(A[op_row_a, col], A[op_row_a, col+1])
-                msi = multiply_side_ident(A[op_row_a, col], ci, copy(R.I[op_row_a]))
-                thisVert *= msi
-            end
+            thisVert *= R.I[op_row_a] 
             thisVert *= AIL 
             thisVert *= op_a
         elseif row == op_row_b
@@ -479,35 +395,20 @@ function verticalTerms(A::fPEPS,
             high_row = op_row_b
             AIL = low_row > 0 ? AI[:below][low_row] : dummy 
             AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
-            thisVert = AIL
-            if col > 1
-                ci  = commonind(A[op_row_a, col], A[op_row_a, col-1])
-                msi = multiply_side_ident(A[op_row_a, col], ci, copy(L.I[op_row_a]))
-                thisVert *= msi 
-            end
-            if col < Nx
-                ci  = commonind(A[op_row_a, col], A[op_row_a, col+1])
-                msi = multiply_side_ident(A[op_row_a, col], ci, copy(R.I[op_row_a]))
-                thisVert *= msi
-            end
             sA = firstind(A[op_row_a, col], "Site")
             op_a = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
             op_a = replaceind!(op_a, H[opcode].site_ind', sA')
             sB = firstind(A[op_row_b, col], "Site")
             op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
             op_b = replaceind!(op_b, H[opcode].site_ind', sB')
-            thisVert *= A[op_row_a, col] * op_a * dag(A[op_row_a, col])'
-            if col > 1
-                ci  = commonind(A[op_row_b, col], A[op_row_b, col-1])
-                msi = multiply_side_ident(A[op_row_b, col], ci, copy(L.I[op_row_b]))
-                thisVert *= msi 
-            end
+            thisVert  = AIL
+            thisVert *= L.I[op_row_a] 
+            thisVert *= A[op_row_a, col] * op_a 
+            thisVert *= R.I[op_row_a] 
+            thisVert *= dag(A[op_row_a, col])'
+            thisVert *= L.I[op_row_b] 
             thisVert *= ϕ
-            if col < Nx
-                ci  = commonind(A[op_row_b, col], A[op_row_b, col+1])
-                msi = multiply_side_ident(A[op_row_b, col], ci, copy(R.I[op_row_b]))
-                thisVert *= msi
-            end
+            thisVert *= R.I[op_row_b] 
             thisVert *= AIH 
             thisVert *= op_b
         end
@@ -547,15 +448,9 @@ function fieldTerms(A::fPEPS,
                 I = row < Ny ? AI[:above][end - row] : dummy 
             end
             thisField *= F
-            if col > 1
-                ci = commonind(A[row, col], A[row, col-1])
-                thisField *= multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-            end
+            thisField *= L.I[row]
             thisField *= ϕ
-            if col < Nx
-                ci = commonind(A[row, col], A[row, col+1])
-                thisField *= multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-            end
+            thisField *= R.I[row]
             thisField *= I
             thisField *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
@@ -563,18 +458,10 @@ function fieldTerms(A::fPEPS,
             high_row = op_row
             AIL = low_row > 0   ? AI[:below][low_row]        : dummy 
             AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
-            thisField = AIL
-            if col > 1
-                ci  = commonind(A[row, col], A[row, col-1])
-                msi = multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-                thisField *= msi 
-            end
+            thisField  = AIL
+            thisField *= L.I[row]
             thisField *= ϕ
-            if col < Nx
-                ci  = commonind(A[row, col], A[row, col+1])
-                msi = multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-                thisField *= msi
-            end
+            thisField *= R.I[row]
             thisField *= AIH
             sA = firstind(A[row, col], "Site")
             op = copy(H[opcode].ops[1])
@@ -616,13 +503,10 @@ function connectLeftTerms(A::fPEPS,
                 ancL = AL[:below][opcode][row - 1]
                 I = row < Ny ? AL[:above][opcode][end - row] : dummy
             end
-            thisHori = ancL
+            thisHori  = ancL
             thisHori *= L.InProgress[row, opcode]
             thisHori *= ϕ
-            if col < Nx
-                ci = commonind(A[row, col], A[row, col+1])
-                thisHori *= multiply_side_ident(A[row, col], ci, copy(R.I[row]))
-            end
+            thisHori *= R.I[row]
             thisHori *= I
             thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
@@ -631,18 +515,13 @@ function connectLeftTerms(A::fPEPS,
             if low_row >= 1
                 thisHori *= AL[:below][opcode][low_row]
             end
+            thisHori *= R.I[row]
+            thisHori *= ϕ
+            thisHori *= L.InProgress[row, opcode]
+            thisHori *= op_b
             if high_row <= Ny
                 thisHori *= AL[:above][opcode][end - high_row + 1]
             end
-            if col < Nx
-                ci = commonind(A[row, col], A[row, col+1])
-                thisHori *= multiply_side_ident(A[row, col], ci, R.I[row])
-            end
-            uih = uniqueinds(thisHori, L.InProgress[row, opcode])
-            uil = uniqueinds(L.InProgress[row, opcode], thisHori)
-            thisHori *= L.InProgress[row, opcode]
-            thisHori *= ϕ
-            thisHori *= op_b
         end
         @assert hasinds(inds(thisHori), AAinds)
         @assert hasinds(AAinds, inds(thisHori))
@@ -681,10 +560,7 @@ function connectRightTerms(A::fPEPS,
             thisHori = ancR
             thisHori *= R.InProgress[row, opcode]
             thisHori *= ϕ
-            if col > 1
-                ci = commonind(A[row, col], A[row, col-1])
-                thisHori *= multiply_side_ident(A[row, col], ci, copy(L.I[row]))
-            end
+            thisHori *= L.I[row]
             thisHori *= I
             thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
@@ -693,16 +569,13 @@ function connectRightTerms(A::fPEPS,
             if low_row >= 1
                 thisHori *= AR[:below][opcode][low_row]
             end
-            if high_row <= Ny
-                thisHori *= AR[:above][opcode][end - high_row + 1]
-            end
-            if col > 1
-                ci = commonind(A[row, col], A[row, col-1])
-                thisHori *= multiply_side_ident(A[row, col], ci, L.I[row])
-            end
+            thisHori *= L.I[row]
             thisHori *= R.InProgress[row, opcode]
             thisHori *= ϕ
             thisHori *= op_a 
+            if high_row <= Ny
+                thisHori *= AR[:above][opcode][end - high_row + 1]
+            end
         end
         @assert hasinds(inds(thisHori), AAinds)
         @assert hasinds(AAinds, inds(thisHori))
@@ -914,38 +787,41 @@ function buildAncs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
-    @debug "\tMaking ancillary identity terms for col $col"
-    Ia = makeAncillaryIs(A, L, R, col)
-    Ib = Vector{ITensor}(undef, Ny)
-    Is = (above=Ia, below=Ib)
+    @timeit "makeAncIs" begin
+        Ia = makeAncillaryIs(A, L, R, col)
+        Ib = Vector{ITensor}(undef, Ny)
+        Is = (above=Ia, below=Ib)
+    end
+    @timeit "makeAncVs" begin
+        vH = getDirectional(vcat(H[:, col]...), Vertical)
+        Va = makeAncillaryVs(A, L, R, vH, col)
+        Vb = [Vector{ITensor}() for ii in 1:length(Va)]
+        Vs = (above=Va, below=Vb)
+    end
+    @timeit "makeAncFs" begin
+        fH = getDirectional(vcat(H[:, col]...), Field)
+        Fa = makeAncillaryFs(A, L, R, fH, col)
+        Fb = [Vector{ITensor}() for ii in 1:length(Fa)]
+        Fs = (above=Fa, below=Fb)
 
-    @debug "\tMaking ancillary vertical terms for col $col"
-    vH = getDirectional(vcat(H[:, col]...), Vertical)
-    Va = makeAncillaryVs(A, L, R, vH, col)
-    Vb = [Vector{ITensor}() for ii in 1:length(Va)]
-    Vs = (above=Va, below=Vb)
-
-    @debug "\tMaking ancillary field terms for col $col"
-    fH = getDirectional(vcat(H[:, col]...), Field)
-    Fa = makeAncillaryFs(A, L, R, fH, col)
-    Fb = [Vector{ITensor}() for ii in 1:length(Fa)]
-    Fs = (above=Fa, below=Fb)
-
+    end
     Ls = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
     Rs = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
     if col > 1
-        @debug "\tMaking ancillary left terms for col $col"
-        lH = getDirectional(vcat(H[:, col-1]...), Horizontal)
-        La = makeAncillarySide(A, L, R, lH, col, :left)
-        Lb = [Vector{ITensor}() for ii in  1:length(La)]
-        Ls = (above=La, below=Lb)
+        @timeit "makeAncLs" begin
+            lH = getDirectional(vcat(H[:, col-1]...), Horizontal)
+            La = makeAncillarySide(A, L, R, lH, col, :left)
+            Lb = [Vector{ITensor}() for ii in  1:length(La)]
+            Ls = (above=La, below=Lb)
+        end
     end
     if col < Nx
-        @debug "\tMaking ancillary right terms for col $col"
-        rH = getDirectional(vcat(H[:, col]...), Horizontal)
-        Ra = makeAncillarySide(A, R, L, rH, col, :right)
-        Rb = [Vector{ITensor}() for ii in  1:length(Ra)]
-        Rs = (above=Ra, below=Rb)
+        @timeit "makeAncRs" begin
+            rH = getDirectional(vcat(H[:, col]...), Horizontal)
+            Ra = makeAncillarySide(A, R, L, rH, col, :right)
+            Rb = [Vector{ITensor}() for ii in  1:length(Ra)]
+            Rs = (above=Ra, below=Rb)
+        end
     end
     Ancs = (I=Is, V=Vs, F=Fs, L=Ls, R=Rs)
     return Ancs
@@ -1062,16 +938,12 @@ function optimizeLocalH(A::fPEPS,
             A[row+1, col] = newU
             if row < Ny - 1
                 nI    = spinI(firstind(A[row+1, col], "Site"); is_gpu=is_cu)
-                newAA = A[row+1, col] * nI * dag(A[row+1, col])'
-                if col > 1
-                    ci     = commonind(A[row+1, col], A[row+1, col-1])
-                    newAA *= multiply_side_ident(A[row+1, col], ci, L.I[row+1])
-                end
-                if col < Nx
-                    ci     = commonind(A[row+1, col], A[row+1, col+1])
-                    newAA *= multiply_side_ident(A[row+1, col], ci, R.I[row+1])
-                end
-                AncEnvs[:I][:above][end - row] = newAA * AncEnvs[:I][:above][end - row - 1]
+                newAA = AncEnvs[:I][:above][end - row - 1]
+                newAA *= L.I[row+1]
+                newAA *= A[row+1, col] * nI
+                newAA *= R.I[row+1]
+                newAA *= dag(A[row+1, col])'
+                AncEnvs[:I][:above][end - row] = newAA
             end
         else
             A[row, col] = initial_N > 0 ? new_A/√new_N : new_A
@@ -1098,8 +970,9 @@ function sweepColumn(A::fPEPS,
                      col::Int; 
                      kwargs...)
     Ny, Nx = size(A)
-    @debug "Beginning intraColumnGauge for col $col" 
-    A = intraColumnGauge(A, col; kwargs...)
+    @timeit "intraColumnGauge" begin
+        A = intraColumnGauge(A, col; kwargs...)
+    end
     if col == div(Nx,2)
         L_s = buildLs(A, H; kwargs...)
         R_s = buildRs(A, H; kwargs...)
@@ -1108,14 +981,15 @@ function sweepColumn(A::fPEPS,
         println("Energy at MID: ", E/(Nx*Ny))
         println("Nx: ", Nx)
     end
-    @debug "Beginning buildAncs for col $col" 
+    @debug "Beginning buildAncs for col $col"
     AncEnvs = buildAncs(A, L, R, H, col)
     @inbounds for row in 1:Ny
         if row > 1
-            @debug "Beginning updateAncs for col $col" 
-            AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+            @timeit "updateAncs" begin
+                AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+            end
         end
-        @debug "Beginning optimizing H for col $col" 
+        @debug "Beginning optimizing H for col $col"
         A, AncEnvs = optimizeLocalH(A, L, R, AncEnvs, H, row, col; kwargs...)
     end
     return A
