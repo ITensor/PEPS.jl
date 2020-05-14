@@ -209,6 +209,34 @@ function buildN(A::fPEPS,
     return workingN
 end
 
+function buildNTwoSite(A::fPEPS, 
+                       L::Environments, 
+                       R::Environments, 
+                       IEnvs, 
+                       row::Int, 
+                       col::Int, 
+                       ϕ::ITensor)::ITensor
+    Ny, Nx   = size(A)
+    up_row   = row + 1
+    workingN = L.I[row]
+    if row > 1
+        workingN *= IEnvs[:below][row - 1]
+    end
+    workingN *= L.I[up_row]
+    workingN *= ϕ
+    workingN *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_gpu(A))
+    workingN *= spinI(firstind(A[row, col], "Site"); is_gpu=is_gpu(A))
+    workingN *= R.I[row]
+    workingN *= R.I[up_row]
+    if up_row < Ny
+        workingN *= IEnvs[:above][end - up_row]
+    end
+    AAinds   = inds(prime(ϕ))
+    @assert hasinds(inds(workingN), AAinds) "row $row\nIndsN: $(inds(workingN))\nIndsAA: $AAinds"
+    @assert hasinds(AAinds, inds(workingN)) "row $row\nIndsN: $(inds(workingN))\nIndsAA: $AAinds"
+    return workingN
+end
+
 function nonWorkRow(A::fPEPS, 
                     L::Environments, 
                     R::Environments, 
@@ -250,7 +278,6 @@ function buildHIedge(A::fPEPS,
         IH_b *= dag(prime(A[work_row, col], "Link"))
     end
     @inbounds for work_row in row+1:Ny
-        #AA    = A[work_row, col] * dag(prime(A[work_row, col], "Link"))
         IH_a *= E.H[work_row] * A[work_row, col]
         IH_a *= dag(prime(A[work_row, col], "Link"))
     end
@@ -267,7 +294,41 @@ function buildHIedge(A::fPEPS,
     return (IH,)
 end
 
-function buildHIs(A::fPEPS, 
+function buildHIedgeTwoSite(A::fPEPS, 
+                            E::Environments, 
+                            row::Int, 
+                            col::Int, 
+                            side::Symbol, 
+                            ϕ::ITensor )
+    Ny, Nx = size(A)
+    is_cu  = is_gpu(A)
+    up_row = row + 1
+    IH_a   = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IH_b   = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IH     = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    next_col = side == :left ? 2 : Nx - 1
+    @inbounds for work_row in 1:row-1
+        IH_b *= E.H[work_row] * A[work_row, col]
+        IH_b *= dag(prime(A[work_row, col], "Link"))
+    end
+    @inbounds for work_row in up_row+1:Ny
+        IH_a *= E.H[work_row] * A[work_row, col]
+        IH_a *= dag(prime(A[work_row, col], "Link"))
+    end
+    IH *= E.H[row]
+    IH *= IH_b
+    IH *= ϕ
+    IH *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+    IH *= E.H[up_row]
+    IH *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+    IH *= IH_a
+    AAinds = inds(prime(ϕ))
+    @assert hasinds(inds(IH), AAinds)
+    @assert hasinds(AAinds, inds(IH))
+    return (IH,)
+end
+
+function buildHIs(A::fPEPS,
                   L::Environments, 
                   R::Environments, 
                   row::Int, 
@@ -329,6 +390,81 @@ function buildHIs(A::fPEPS,
         op   = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         HLI *= op
         IHR *= op
+    end
+    AAinds = inds(prime(ϕ))
+    @assert hasinds(inds(IHR), AAinds)
+    @assert hasinds(inds(HLI), AAinds)
+    @assert hasinds(AAinds, inds(IHR))
+    @assert hasinds(AAinds, inds(HLI))
+    return (HLI, IHR)
+end
+
+function buildHIsTwoSite(A::fPEPS,
+                         L::Environments, 
+                         R::Environments, 
+                         row::Int, 
+                         col::Int, 
+                         ϕ::ITensor)
+    Ny, Nx = size(A)
+    is_cu  = is_gpu(A)
+    up_row = row + 1
+    @timeit "buildHIedge" begin
+        if col == 1
+            return buildHIedgeTwoSite(A, R, row, col, :left, ϕ)
+        end
+        if col == Nx
+            return buildHIedgeTwoSite(A, L, row, col, :right, ϕ)
+        end
+    end
+    HLI_a = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    HLI_b = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IHR_a = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IHR_b = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    HLI   = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    IHR   = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    @timeit "build HI lower" begin
+        @inbounds for work_row in 1:row-1
+            tL     = A[work_row, col]*L.H[work_row]
+            HLI_b *= tL 
+            HLI_b *= R.I[work_row]
+            HLI_b *= dag(prime(A[work_row, col], "Link"))
+            tR     = A[work_row, col]*R.H[work_row]
+            IHR_b *= tR 
+            IHR_b *= L.I[work_row]
+            IHR_b *= dag(prime(A[work_row, col], "Link"))
+        end
+    end
+    @timeit "build HI upper" begin
+        @inbounds for work_row in reverse(up_row+1:Ny)
+            tL     = A[work_row, col]*L.H[work_row]
+            HLI_a *= tL 
+            HLI_a *= R.I[work_row]
+            HLI_a *= dag(prime(A[work_row, col], "Link"))
+            tR     = A[work_row, col]*R.H[work_row]
+            IHR_a *= tR 
+            IHR_a *= L.I[work_row]
+            IHR_a *= dag(prime(A[work_row, col], "Link"))
+        end
+    end
+    @timeit "join up HIs" begin
+        HLI *= L.H[row]
+        HLI *= L.H[up_row]
+        HLI *= HLI_b
+        HLI *= ϕ
+        HLI *= R.I[row]
+        HLI *= R.I[up_row]
+        IHR *= L.I[row]
+        IHR *= L.I[up_row]
+        IHR *= IHR_b
+        IHR *= ϕ
+        IHR *= R.H[row]
+        IHR *= R.H[up_row]
+        HLI *= HLI_a
+        IHR *= IHR_a
+        HLI *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+        HLI *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+        IHR *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+        IHR *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
     end
     AAinds = inds(prime(ϕ))
     @assert hasinds(inds(IHR), AAinds)
@@ -423,6 +559,7 @@ function verticalTerms(A::fPEPS,
     return vTerms
 end
 
+<<<<<<< HEAD
 function diagonalTerms(A::fPEPS,
                        L::Environments,
                        R::Environments,
@@ -520,6 +657,120 @@ function diagonalTerms(A::fPEPS,
         end
     end
     return dTerms
+=======
+function verticalTermsTwoSite(A::fPEPS, 
+                              L::Environments, 
+                              R::Environments, 
+                              AI, 
+                              AV, 
+                              H, 
+                              row::Int, 
+                              col::Int, 
+                              ϕ::ITensor)::Vector{ITensor} 
+    Ny, Nx = size(A)
+    is_cu  = is_gpu(A) 
+    vTerms = ITensor[]#fill(ITensor(), length(H))
+    AAinds = inds(prime(ϕ))
+    dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    up_row = row + 1
+    @inbounds for opcode in 1:length(H)
+        thisVert = dummy 
+        op_row_a = H[opcode].sites[1][1]
+        op_row_b = H[opcode].sites[2][1]
+        if op_row_b < row || up_row < op_row_a
+            local V, I
+            if op_row_a > up_row
+                V = AV[:above][opcode][end - up_row]
+                I = row > 1 ? AI[:below][row - 1] : dummy 
+            elseif op_row_b < row
+                V = AV[:below][opcode][row - op_row_b]
+                I = up_row < Ny ? AI[:above][end - up_row] : dummy
+            end
+            thisVert *= V
+            thisVert *= L.I[row]
+            thisVert *= L.I[up_row]
+            thisVert *= ϕ
+            thisVert *= R.I[row]
+            thisVert *= R.I[up_row]
+            thisVert *= I
+            thisVert *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+            thisVert *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+        elseif row == op_row_a
+            low_row  = op_row_a - 1
+            high_row = op_row_b
+            AIL = low_row > 0   ? AI[:below][low_row]        : dummy 
+            AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
+            sA   = firstind(A[op_row_a, col], "Site")
+            op_a = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+            op_a = replaceind!(op_a, H[opcode].site_ind', sA')
+            sB   = firstind(A[op_row_b, col], "Site")
+            op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
+            op_b = replaceind!(op_b, H[opcode].site_ind', sB')
+            thisVert  = AIH
+            thisVert *= L.I[op_row_b]
+            thisVert *= L.I[op_row_a]
+            thisVert *= ϕ
+            thisVert *= R.I[op_row_b]
+            thisVert *= R.I[op_row_a] 
+            thisVert *= AIL 
+            thisVert *= op_a
+            thisVert *= op_b
+        elseif row == op_row_b
+            low_row  = op_row_a - 1
+            high_row = op_row_b + 1
+            AIL  = low_row > 0   ? AI[:below][low_row]        : dummy 
+            AIH  = high_row < Ny ? AI[:above][end - high_row] : dummy 
+            sA   = firstind(A[op_row_a, col], "Site")
+            op_a = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+            op_a = replaceind!(op_a, H[opcode].site_ind', sA')
+            sB   = firstind(A[op_row_b, col], "Site")
+            op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
+            op_b = replaceind!(op_b, H[opcode].site_ind', sB')
+            thisVert  = AIL
+            thisVert *= L.I[op_row_a] 
+            thisVert *= A[op_row_a, col] * op_a 
+            thisVert *= R.I[op_row_a] 
+            thisVert *= dag(A[op_row_a, col])'
+            thisVert *= L.I[op_row_b] 
+            thisVert *= ϕ
+            thisVert *= R.I[op_row_b] 
+            thisVert *= L.I[up_row] 
+            thisVert *= R.I[up_row] 
+            thisVert *= AIH 
+            thisVert *= op_b
+            thisVert *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+        elseif up_row == op_row_a
+            low_row  = op_row_a - 2
+            high_row = op_row_b
+            AIL  = low_row > 0   ? AI[:below][low_row]        : dummy 
+            AIH  = high_row < Ny ? AI[:above][end - high_row] : dummy 
+            sA   = firstind(A[op_row_a, col], "Site")
+            op_a = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+            op_a = replaceind!(op_a, H[opcode].site_ind', sA')
+            sB   = firstind(A[op_row_b, col], "Site")
+            op_b = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
+            op_b = replaceind!(op_b, H[opcode].site_ind', sB')
+            thisVert  = AIH
+            thisVert *= L.I[op_row_b] 
+            thisVert *= A[op_row_b, col] * op_b
+            thisVert *= R.I[op_row_b] 
+            thisVert *= dag(A[op_row_b, col])'
+            thisVert *= L.I[op_row_a]
+            thisVert *= ϕ
+            thisVert *= R.I[op_row_a]
+            thisVert *= L.I[row]
+            thisVert *= R.I[row]
+            thisVert *= AIL 
+            thisVert *= op_a
+            thisVert *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+        end
+        @assert hasinds(inds(thisVert), AAinds) "inds of thisVert and AAinds differ!\n$(inds(thisVert))\n$AAinds\n"
+        @assert hasinds(AAinds, inds(thisVert)) "inds of thisVert and AAinds differ!\n$(inds(thisVert))\n$AAinds\n"
+        if hasinds(AAinds, inds(thisVert)) && hasinds(inds(thisVert), AAinds)
+            push!(vTerms, thisVert)
+        end
+    end
+    return vTerms
 end
 
 function fieldTerms(A::fPEPS,
@@ -530,7 +781,7 @@ function fieldTerms(A::fPEPS,
                     H,
                     row::Int,
                     col::Int,
-                    ϕ::ITensor)::Vector{ITensor}
+                    ϕ::ITensor)::Vector{ITensor} 
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     fTerms = Vector{ITensor}(undef, length(H))
@@ -577,14 +828,85 @@ function fieldTerms(A::fPEPS,
     return fTerms
 end
 
-function connectLeftTerms(A::fPEPS, 
-                          L::Environments, 
-                          R::Environments, 
-                          AI, AL, H, 
-                          row::Int, col::Int, 
-                          ϕ::ITensor)::Vector{ITensor} 
+function fieldTermsTwoSite(A::fPEPS,
+                           L::Environments,
+                           R::Environments,
+                           AI,
+                           AF,
+                           H,
+                           row::Int,
+                           col::Int,
+                           ϕ::ITensor)::Vector{ITensor} 
     Ny, Nx = size(A)
-    is_cu  = is_gpu(A) 
+    is_cu  = is_gpu(A)
+    fTerms = Vector{ITensor}(undef, length(H))
+    dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    AAinds = inds(prime(ϕ))
+    up_row = row + 1
+    @inbounds for opcode in 1:length(H)
+        thisField = dummy
+        op_row    = H[opcode].sites[1][1]
+        if op_row != row && up_row != op_row
+            local F, I
+            if op_row > up_row
+                F = AF[:above][opcode][end - up_row]
+                I = row > 1 ? AI[:below][row - 1] : dummy
+            else
+                F = AF[:below][opcode][row - 1]
+                I = up_row < Ny ? AI[:above][end - up_row] : dummy
+            end
+            thisField *= F
+            thisField *= L.I[row]
+            thisField *= L.I[up_row]
+            thisField *= ϕ
+            thisField *= R.I[row]
+            thisField *= R.I[up_row]
+            thisField *= I
+            thisField *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+            thisField *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+        else
+            low_row  = row - 1
+            high_row = up_row
+            AIL = low_row > 0   ? AI[:below][low_row]        : dummy 
+            AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
+            thisField  = AIL
+            thisField *= L.I[row]
+            thisField *= L.I[up_row]
+            thisField *= ϕ
+            thisField *= R.I[row]
+            thisField *= R.I[up_row]
+            thisField *= AIH
+            sA = firstind(A[row, col], "Site")
+            sB = firstind(A[up_row, col], "Site")
+            if op_row == row
+                op = copy(H[opcode].ops[1])
+                op = replaceind!(op, H[opcode].site_ind, sA)
+                op = replaceind!(op, H[opcode].site_ind', sA')
+                thisField *= op
+                thisField *= spinI(sB; is_gpu=is_cu)
+            elseif op_row == up_row
+                op = copy(H[opcode].ops[1])
+                op = replaceind!(op, H[opcode].site_ind, sB)
+                op = replaceind!(op, H[opcode].site_ind', sB')
+                thisField *= op
+                thisField *= spinI(sA; is_gpu=is_cu)
+            end
+        end
+        @assert hasinds(inds(thisField), AAinds) "row $row\ntf: $(inds(thisField))\naa: $AAinds"
+        @assert hasinds(AAinds, inds(thisField)) "row $row\ntf: $(inds(thisField))\naa: $AAinds"
+        fTerms[opcode] = thisField;
+    end
+    return fTerms
+end
+
+function connectLeftTerms(A::fPEPS,
+                          L::Environments,
+                          R::Environments,
+                          AI, AL, H,
+                          row::Int, col::Int,
+                          ϕ::ITensor)::Vector{ITensor}
+    Ny, Nx = size(A)
+    is_cu  = is_gpu(A)
     lTerms = Vector{ITensor}(undef, length(H))
     AAinds = inds(prime(ϕ))
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
@@ -631,12 +953,12 @@ function connectLeftTerms(A::fPEPS,
     return lTerms
 end
 
-function connectRightTerms(A::fPEPS, 
-                           L::Environments, 
-                           R::Environments, 
-                           AI, AR, H, 
-                           row::Int, col::Int, 
-                           ϕ::ITensor)::Vector{ITensor} 
+function connectRightTerms(A::fPEPS,
+                           L::Environments,
+                           R::Environments,
+                           AI, AR, H,
+                           row::Int, col::Int,
+                           ϕ::ITensor)::Vector{ITensor}
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     rTerms = Vector{ITensor}(undef, length(H))
@@ -674,6 +996,137 @@ function connectRightTerms(A::fPEPS,
             thisHori *= R.InProgress[row, opcode]
             thisHori *= ϕ
             thisHori *= op_a 
+            if high_row <= Ny
+                thisHori *= AR[:above][opcode][end - high_row + 1]
+            end
+        end
+        @assert hasinds(inds(thisHori), AAinds)
+        @assert hasinds(AAinds, inds(thisHori))
+        rTerms[opcode] = thisHori
+    end
+    return rTerms
+end
+
+function connectLeftTermsTwoSite(A::fPEPS,
+                                 L::Environments,
+                                 R::Environments,
+                                 AI, AL, H,
+                                 row::Int, col::Int,
+                                 ϕ::ITensor)::Vector{ITensor}
+    Ny, Nx = size(A)
+    up_row = row + 1
+    is_cu  = is_gpu(A)
+    lTerms = Vector{ITensor}(undef, length(H))
+    AAinds = inds(prime(ϕ))
+    dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
+    @inbounds for opcode in 1:length(H)
+        op_row_b = H[opcode].sites[2][1]
+        op_b = copy(H[opcode].ops[2])
+        as   = firstind(A[op_row_b, col], "Site")
+        op_b = replaceind!(op_b, H[opcode].site_ind, as)
+        op_b = replaceind!(op_b, H[opcode].site_ind', as')
+        thisHori = is_cu ? cuITensor(1.0) : ITensor(1.0)
+        if op_row_b != row && op_row_b != up_row
+            local ancL, I
+            if op_row_b > up_row
+                La = AL[:above][opcode][end - up_row]
+                Lb = row > 1 ? AL[:below][opcode][row - 1] : dummy 
+            else
+                Lb = AL[:below][opcode][row - 1]
+                La = up_row < Ny ? AL[:above][opcode][end - up_row] : dummy
+            end
+            thisHori  = Lb
+            thisHori *= L.InProgress[row, opcode]
+            thisHori *= L.InProgress[up_row, opcode]
+            thisHori *= ϕ
+            thisHori *= R.I[row]
+            thisHori *= R.I[up_row]
+            thisHori *= La
+            thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+            thisHori *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+        else
+            low_row  = (op_row_b <= row)    ? op_row_b - 1 : row - 1;
+            high_row = (op_row_b >= up_row) ? op_row_b + 1 : up_row + 1;
+            if low_row >= 1
+                thisHori *= AL[:below][opcode][low_row]
+            end
+            thisHori *= R.I[row]
+            thisHori *= R.I[up_row]
+            thisHori *= ϕ
+            thisHori *= L.InProgress[row, opcode]
+            thisHori *= L.InProgress[up_row, opcode]
+            if high_row <= Ny
+                thisHori *= AL[:above][opcode][end - high_row + 1]
+            end
+            if row == op_row_b
+                thisHori *= op_b
+                thisHori *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+            elseif up_row == op_row_b
+                thisHori *= op_b
+                thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+            end
+        end
+        @assert hasinds(inds(thisHori), AAinds) "row $row\ntH: $(inds(thisHori))\nAA: $AAinds"
+        @assert hasinds(AAinds, inds(thisHori)) "row $row\ntH: $(inds(thisHori))\nAA: $AAinds"
+        lTerms[opcode] = thisHori
+    end
+    return lTerms
+end
+
+function connectRightTermsTwoSite(A::fPEPS,
+                                  L::Environments,
+                                  R::Environments,
+                                  AI, AR, H,
+                                  row::Int, col::Int,
+                                  ϕ::ITensor)::Vector{ITensor}
+    Ny, Nx = size(A)
+    is_cu  = is_gpu(A)
+    up_row = row + 1
+    rTerms = Vector{ITensor}(undef, length(H))
+    AAinds = inds(prime(ϕ))
+    dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
+    @inbounds for opcode in 1:length(H)
+        op_row_a = H[opcode].sites[1][1]
+        op_a = copy(H[opcode].ops[1])
+        as   = firstind(A[op_row_a, col], "Site")
+        op_a = replaceind!(op_a, H[opcode].site_ind, as)
+        op_a = replaceind!(op_a, H[opcode].site_ind', as')
+        thisHori = is_cu ? cuITensor(1.0) : ITensor(1.0)
+        if op_row_a != row && op_row_a != up_row
+            local ancR, I
+            if op_row_a > up_row
+                Ra = AR[:above][opcode][end - up_row]
+                Rb = row > 1 ? AR[:below][opcode][row - 1] : dummy 
+            else
+                Rb = AR[:below][opcode][row - 1]
+                Ra = up_row < Ny ? AR[:above][opcode][end - up_row] : dummy 
+            end
+            thisHori = Rb
+            thisHori *= R.InProgress[row, opcode]
+            thisHori *= R.InProgress[up_row, opcode]
+            thisHori *= ϕ
+            thisHori *= L.I[row]
+            thisHori *= L.I[up_row]
+            thisHori *= Ra
+            thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+            thisHori *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+        else
+            low_row  = (op_row_a <= row)    ? op_row_a - 1 : row - 1;
+            high_row = (op_row_a >= up_row) ? op_row_a + 1 : up_row + 1;
+            if low_row >= 1
+                thisHori *= AR[:below][opcode][low_row]
+            end
+            thisHori *= L.I[row]
+            thisHori *= L.I[up_row]
+            thisHori *= ϕ
+            thisHori *= R.InProgress[row, opcode]
+            thisHori *= R.InProgress[up_row, opcode]
+            thisHori *= op_a
+            if op_row_a == row
+                thisHori *= spinI(firstind(A[up_row, col], "Site"); is_gpu=is_cu)
+            elseif op_row_a == up_row
+                thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+            end
             if high_row <= Ny
                 thisHori *= AR[:above][opcode][end - high_row + 1]
             end
@@ -812,6 +1265,106 @@ function buildLocalH(A::fPEPS,
                 for (rr, rT) in enumerate(rTs)
                     println(right_H_terms[rr])
                     println(scalar(rT * dag(ϕ)')/den)
+                end
+            end
+        end
+        @debug "\t\tBuilt right terms"
+    end
+    return Hs, N
+end
+
+function buildLocalHTwoSite(A::fPEPS, 
+                            L::Environments, R::Environments, 
+                            AncEnvs, H, 
+                            row::Int, col::Int, 
+                            ϕ::ITensor; 
+                            verbose::Bool=false)
+    field_H_terms = getDirectional(vcat(H[:, col]...), Field)
+    vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
+    term_count    = 1 + length(field_H_terms) + length(vert_H_terms)
+    Ny, Nx        = size(A)
+    @timeit "build Ns" begin
+        N   = buildNTwoSite(A, L, R, AncEnvs[:I], row, col, ϕ)
+    end
+    den = scalar(collect(N * dag(ϕ)'))
+    local left_H_terms, right_H_terms
+    if col > 1
+        left_H_terms = getDirectional(vcat(H[:, col - 1]...), Horizontal)
+        term_count += length(left_H_terms)
+    end
+    if col < Nx
+        right_H_terms = getDirectional(vcat(H[:, col]...), Horizontal)
+        term_count += length(right_H_terms)
+    end
+    if 1 < col < Nx
+        term_count += 1
+    end
+    Hs = Vector{ITensor}(undef, term_count)
+    term_counter = 1
+    @debug "\t\tBuilding I*H and H*I row $row col $col"
+    @timeit "build HIs" begin
+        HIs = buildHIsTwoSite(A, L, R, row, col, ϕ)
+        Hs[term_counter] = HIs[1]
+        if length(HIs) == 2
+            Hs[term_counter+1] = HIs[2]
+        end
+        term_counter += length(HIs)
+        if verbose
+            println("--- HI TERMS ---")
+            for HI in HIs
+                println(scalar(HI * dag(ϕ)'))
+            end
+        end
+    end
+    @debug "\t\tBuilding vertical H terms row $row col $col"
+    @timeit "build vertical terms" begin
+        vTs = verticalTermsTwoSite(A, L, R, AncEnvs[:I], AncEnvs[:V], vert_H_terms, row, col, ϕ) 
+        Hs[term_counter:term_counter+length(vTs) - 1] = vTs
+        term_counter += length(vTs)
+        if verbose
+            println( "--- vT TERMS ---")
+            for vT in vTs
+                println(scalar(vT * dag(ϕ)'))
+            end
+        end
+    end
+    @debug "\t\tBuilding field H terms row $row col $col"
+    @timeit "build field terms" begin
+        fTs = fieldTermsTwoSite(A, L, R, AncEnvs[:I], AncEnvs[:F], field_H_terms, row, col, ϕ)
+        Hs[term_counter:term_counter+length(fTs) - 1] = fTs[:]
+        term_counter += length(fTs)
+        if verbose
+            println( "--- fT TERMS ---")
+            for fT in fTs
+                println(scalar(fT * dag(ϕ)'))
+            end
+        end
+    end
+    if col > 1
+        @debug "\t\tBuilding left H terms row $row col $col"
+        @timeit "build left terms" begin
+            lTs = connectLeftTermsTwoSite(A, L, R, AncEnvs[:I], AncEnvs[:L], left_H_terms, row, col, ϕ)
+            Hs[term_counter:term_counter+length(lTs) - 1] = lTs[:]
+            term_counter += length(lTs)
+            if verbose
+                println( "--- lT TERMS ---")
+                for lT in lTs
+                    println(scalar(lT * dag(ϕ)'))
+                end
+            end
+        end
+        @debug "\t\tBuilt left terms"
+    end
+    if col < Nx
+        @debug "\t\tBuilding right H terms row $row col $col"
+        @timeit "build right terms" begin
+            rTs = connectRightTermsTwoSite(A, L, R, AncEnvs[:I], AncEnvs[:R], right_H_terms, row, col, ϕ)
+            Hs[term_counter:term_counter+length(rTs) - 1] = rTs[:]
+            term_counter += length(rTs)
+            if verbose
+                println( "--- rT TERMS ---")
+                for rT in rTs
+                    println(scalar(rT * dag(ϕ)'))
                 end
             end
         end
@@ -1043,7 +1596,24 @@ function (M::ITensorMap)(v::ITensor)
     return noprime(localH)
 end
 
-function optimizeLocalH(A::fPEPS, 
+struct ITensorMapTwoSite
+  A::fPEPS
+  H::Matrix{Vector{Operator}}
+  L::Environments
+  R::Environments
+  AncEnvs::NamedTuple
+  row::Int
+  col::Int
+end
+Base.eltype(M::ITensorMapTwoSite) = eltype(M.A)
+Base.size(M::ITensorMapTwoSite)   = ITensors.dim(M.A[M.row, M.col]*M.A[M.row+1, M.col])
+function (M::ITensorMapTwoSite)(v::ITensor) 
+    Hs, N  = buildLocalHTwoSite(M.A, M.L, M.R, M.AncEnvs, M.H, M.row, M.col, v)
+    localH = sum(Hs)
+    return noprime(localH)
+end
+
+function optimizeLocalH(A::fPEPS,
                         L::Environments, R::Environments, 
                         AncEnvs, H, 
                         row::Int, col::Int; 
@@ -1066,8 +1636,6 @@ function optimizeLocalH(A::fPEPS,
     mapper   = ITensorMap(A, H, L, R, AncEnvs, row, col)
     λ, new_A = davidson(mapper, A[row, col]; maxiter=1, kwargs...)
     new_E    = λ #real(scalar(collect(new_A * localH * dag(new_A)')))
-    #new_A    = A[row,col]
-    #new_E    = initial_E
     N        = buildN(A, L, R, AncEnvs[:I], row, col, new_A)
     new_N    = real(scalar(collect(N * dag(new_A)')))
     @info "Optimized energy at row $row col $col : $(new_E/(new_N*Nx*Ny)) and norm : $new_N"
@@ -1113,6 +1681,71 @@ function optimizeLocalH(A::fPEPS,
     return A, AncEnvs
 end
 
+function optimizeLocalHTwoSite(A::fPEPS,
+                               L::Environments, R::Environments, 
+                               AncEnvs, H, 
+                               row::Int, col::Int; 
+                               kwargs...)
+    Ny, Nx        = size(A)
+    is_cu         = is_gpu(A)
+    field_H_terms = getDirectional(vcat(H[:, col]...), Field)
+    vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
+    ϕ             = A[row, col]*A[row+1, col]
+    @debug "\tBuilding H for col $col row $row"
+    @timeit "build H" begin
+        Hs, N = buildLocalHTwoSite(A, L, R, AncEnvs, H, row, col, ϕ)
+    end
+    initial_N = real(scalar(collect(N * dag(ϕ'))))
+    @timeit "sum H terms" begin
+        localH = sum(Hs)
+    end
+    initial_E = real(scalar(collect(deepcopy(localH) * dag(ϕ)')))
+    @info "Initial energy at row $row col $col : $(initial_E/(initial_N*Nx*Ny)) and norm : $initial_N"
+    @debug "\tBeginning davidson for col $col row $row"
+    mapper   = ITensorMapTwoSite(A, H, L, R, AncEnvs, row, col)
+    λ, new_ϕ = davidson(mapper, ϕ; maxiter=2, kwargs...)
+    new_E    = λ
+    N        = buildNTwoSite(A, L, R, AncEnvs[:I], row, col, new_ϕ)
+    new_N    = real(scalar(collect(N * dag(new_ϕ)')))
+    @info "Optimized energy at row $row col $col : $(new_E/(new_N*Nx*Ny)) and norm : $new_N"
+    @timeit "restore intraColumnGauge" begin
+        if row <= Ny - 1
+            cmb_is     = IndexSet(firstind(A[row, col], "Site"))
+            if col > 1
+                cmb_is = IndexSet(cmb_is..., commonind(A[row, col], A[row, col - 1]))
+            end
+            if col < Nx
+                cmb_is = IndexSet(cmb_is..., commonind(A[row, col], A[row, col + 1]))
+            end
+            cmb     = combiner(cmb_is, tags="CMB")
+            ci      = combinedind(cmb)
+            Lis     = IndexSet(ci) #cmb_is 
+            if row > 1
+                Lis = IndexSet(Lis..., commonind(A[row, col], A[row - 1, col]))
+            end
+            old_ci  = commonind(A[row, col], A[row+1, col])
+            svdA    = new_ϕ*cmb
+            Ris     = uniqueinds(inds(svdA), Lis) 
+            U, S, V = svd(svdA, Ris; kwargs...)
+            new_ci  = commonind(V, S)
+            replaceind!(V, new_ci, old_ci)
+            A[row, col] = V*cmb 
+            newU        = S*U
+            replaceind!(newU, new_ci, old_ci)
+            A[row+1, col] = newU
+            if row < Ny - 1
+                nI    = spinI(firstind(A[row+1, col], "Site"); is_gpu=is_cu)
+                newAA = copy(AncEnvs[:I][:above][end - row - 1])
+                newAA *= L.I[row+1]
+                newAA *= A[row+1, col] * nI
+                newAA *= R.I[row+1]
+                newAA *= dag(A[row+1, col])'
+                AncEnvs[:I][:above][end - row] = newAA
+            end
+        end
+    end
+    return A, AncEnvs
+end
 function measureEnergy(A::fPEPS, 
                        L::Environments, R::Environments, 
                        AncEnvs, H, 
@@ -1144,14 +1777,27 @@ function sweepColumn(A::fPEPS,
     end
     @debug "Beginning buildAncs for col $col"
     AncEnvs = buildAncs(A, L, R, H, col)
-    @inbounds for row in 1:Ny
-        if row > 1
-            @timeit "updateAncs" begin
-                AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+    two_site::Bool = get(kwargs, :two_site, false)
+    if two_site
+        @inbounds for row in 1:Ny-1
+            if row > 1
+                @timeit "updateAncs" begin
+                    AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+                end
             end
+            @debug "Beginning optimizing H for col $col"
+            A, AncEnvs = optimizeLocalHTwoSite(A, L, R, AncEnvs, H, row, col; kwargs...)
         end
-        @debug "Beginning optimizing H for col $col"
-        A, AncEnvs = optimizeLocalH(A, L, R, AncEnvs, H, row, col; kwargs...)
+    else
+        @inbounds for row in 1:Ny
+            if row > 1
+                @timeit "updateAncs" begin
+                    AncEnvs = updateAncs(A, L, R, AncEnvs, H, row-1, col)
+                end
+            end
+            @debug "Beginning optimizing H for col $col"
+            A, AncEnvs = optimizeLocalH(A, L, R, AncEnvs, H, row, col; kwargs...)
+        end
     end
     return A
 end
@@ -1262,14 +1908,15 @@ function doSweeps(A::fPEPS,
                   do_mag::Bool=false, 
                   prefix="mag", 
                   max_gauge_iter::Int=10,
-                  model::Symbol=:XXZ)
+                  model::Symbol=:XXZ,
+                  two_site::Bool=false)
     Ny, Nx = size(A) 
     for sweep in sweep_start:sweep_count
         if iseven(sweep)
-            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter)
+            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter, two_site=two_site)
             println("SWEEP RIGHT $sweep, time $this_time")
         else
-            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed leftwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter)
+            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed leftwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter, two_site=two_site)
             println("SWEEP LEFT $sweep, time $this_time")
         end
         flush(stdout)
