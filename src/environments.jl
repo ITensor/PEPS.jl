@@ -194,7 +194,7 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
     for row in 1:Ny
         dummy[row]  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
     end
-    dummy_mps       = MPS(Ny, dummy, 0, Ny+1)
+    dummy_mps       = MPS(dummy, 0, Ny+1)
     I_mps           = buildNewI(A, dummy_mps, col, chi)
     field_H_terms   = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms    = getDirectional(vcat(H[:, col]...), Vertical)
@@ -261,7 +261,7 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
     @timeit "connect dangling bonds" begin
         @inbounds for (cc, cH) in enumerate(connect_H)
             new_H = connectDanglingBonds(A, cH, prev_Env.InProgress[:, cc], side, col; kwargs...)
-            new_H_mps[length(vert_H_terms) + length(field_H_terms) + 1 + cc] = MPS(Ny, new_H, 0, Ny+1)
+            new_H_mps[length(vert_H_terms) + length(field_H_terms) + 1 + cc] = MPS(new_H, 0, Ny+1)
         end
     end
     @debug "Connected dangling bonds"
@@ -382,7 +382,7 @@ function connectDanglingBonds(A::fPEPS,
     ops                  = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds]
     ops[application_row] = replaceind!(copy(op), oldH.site_ind, col_site_inds[application_row])
     ops[application_row] = replaceind!(ops[application_row], oldH.site_ind', col_site_inds[application_row]')
-    in_prog_mps          = MPS(Ny, in_progress, 0, Ny + 1)
+    in_prog_mps          = MPS(in_progress, 0, Ny + 1)
     #return data(fitPEPSMPOold(A, in_progress, ops, col, chi))
     return data(fitPEPSMPO(A, in_progress, ops, col, chi))
 end

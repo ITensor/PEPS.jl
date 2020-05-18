@@ -10,7 +10,7 @@ end
 function initQs( A::fPEPS, col::Int, next_col::Int; kwargs...)
     Ny, Nx = size(A)
     maxdim::Int = get(kwargs, :maxdim, 1)
-    Q         = MPO(Ny, deepcopy(A[:, col]), 0, Ny+1)
+    Q         = MPO(deepcopy(A[:, col]), 0, Ny+1)
     prev_col  = next_col > col ? col - 1 : col + 1
     A_r_inds  = [commonind(A[row, col], A[row, next_col]) for row in 1:Ny]
     QR_inds   = [Index(ITensors.dim(A_r_inds[row]), "Site,QR,c$col,r$row") for row in 1:Ny]
@@ -185,7 +185,7 @@ function gaugeColumn( A::fPEPS, col::Int, side::Symbol; kwargs...)
         cmb_r = Vector{ITensor}(undef, Ny)
         cmb_u = Vector{ITensor}(undef, Ny - 1)
         if (side == :left && col > 1 ) || (side == :right && col < Nx)
-            next_col_As = MPO(Ny, deepcopy(A[:, next_col]), 0, Ny+1)
+            next_col_As = MPO(deepcopy(A[:, next_col]), 0, Ny+1)
             nn_col = side == :left ? next_col - 1 : next_col + 1
             cmb_inds_ = [IndexSet(firstind(A[row, next_col], "Site")) for row in 1:Ny]
             for row in 1:Ny
