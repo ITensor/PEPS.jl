@@ -92,8 +92,11 @@ function measureSmagVertical(A::fPEPS,
     vTs = verticalTerms(A, tL, tR, (above=AI,), (above=AV,), SVs, 1, col, A[1, col])
     N   = buildN(A, tL, tR, (above=AI,), 1, col, A[1, col])
     nrm = scalar(N * dag(A[1, col]'))
+    println( "--- vertical TERMS col $col ---")
     for (vi, vT) in enumerate(vTs)
         row = SVs[vi].sites[1][1]
+        println(SVs[vi])
+        println(scalar(vT * dag(A[1, col]'))/nrm)
         measuredSV[row] += scalar(vT * dag(A[1, col]'))/nrm
     end
     return measuredSV
@@ -128,14 +131,17 @@ function measureSmagHorizontal(A::fPEPS,
         push!(SHs, Operator([row=>col, row=>col+1], [Z, Z], s, Horizontal))
     end
     tR = Rs[col+1]
-    tL = col == 1      ? dummyEnv : Ls[col-1]
+    tL = col == 1 ? dummyEnv : Ls[col-1]
     AI = makeAncillaryIs(A, tL, tR, col)
     AS = makeAncillarySide(A, tR, tL, SHs, col, :right)
     hTs = connectRightTerms(A, tL, tR, (above=AI,), (above=AS,), SHs, 1, col, A[1, col])
     N  = buildN(A, tL, tR, (above=AI,), 1, col, A[1, col])
     nrm = scalar(N * dag(A[1, col]'))
+    println( "--- horizontal TERMS col $col ---")
     for (hi, hT) in enumerate(hTs)
         row = SHs[hi].sites[1][1]
+        println(SHs[hi])
+        println(scalar(hT * dag(A[1, col]'))/nrm)
         measuredSH[row] += scalar(hT * dag(A[1, col]'))/nrm
     end
     return measuredSH

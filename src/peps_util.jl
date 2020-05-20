@@ -159,6 +159,8 @@ struct Operator
     dir::Op_Type
 end
 
+Base.show(io::IO, o::Operator) = show(io, "Direction: $(o.dir)\nSites [row => col]: $(o.sites)\n")
+
 getDirectional(ops::Vector{Operator}, dir::Op_Type) = collect(filter(x->x.dir==dir, ops))
 
 function spinI(s::Index; is_gpu::Bool=false)::ITensor
@@ -633,9 +635,10 @@ function buildLocalH(A::fPEPS,
         Hs[term_counter:term_counter+length(vTs) - 1] = vTs
         term_counter += length(vTs)
         if verbose
-            println( "--- vT TERMS ---")
-            for vT in vTs
-                println(scalar(vT * dag(ϕ)'))
+            println( "--- vT TERMS col $col row $row ---")
+            for (vv, vT) in enumerate(vTs)
+                println(vert_H_terms[vv])
+                println(scalar(vT * dag(ϕ)')/den)
             end
         end
     end
@@ -645,9 +648,10 @@ function buildLocalH(A::fPEPS,
         Hs[term_counter:term_counter+length(fTs) - 1] = fTs[:]
         term_counter += length(fTs)
         if verbose
-            println( "--- fT TERMS ---")
-            for (fi, fT) in enumerate(fTs)
-                println(scalar(fT * dag(ϕ)'))
+            println( "--- fT TERMS col $col row $row ---")
+            for (ff, fT) in enumerate(fTs)
+                println(field_H_terms[ff])
+                println(scalar(fT * dag(ϕ)')/den)
             end
         end
     end
@@ -658,9 +662,10 @@ function buildLocalH(A::fPEPS,
             Hs[term_counter:term_counter+length(lTs) - 1] = lTs[:]
             term_counter += length(lTs)
             if verbose
-                println( "--- lT TERMS ---")
-                for lT in lTs
-                    println(scalar(lT * dag(ϕ)'))
+                println( "--- lT TERMS col $col row $row ---")
+                for (ll, lT) in enumerate(lTs)
+                    println(left_H_terms[ll])
+                    println(scalar(lT * dag(ϕ)')/den)
                 end
             end
         end
@@ -673,9 +678,10 @@ function buildLocalH(A::fPEPS,
             Hs[term_counter:term_counter+length(rTs) - 1] = rTs[:]
             term_counter += length(rTs)
             if verbose
-                println( "--- rT TERMS ---")
-                for rT in rTs
-                    println(scalar(rT * dag(ϕ)'))
+                println( "--- rT TERMS col $col row $row ---")
+                for (rr, rT) in enumerate(rTs)
+                    println(right_H_terms[rr])
+                    println(scalar(rT * dag(ϕ)')/den)
                 end
             end
         end
@@ -896,7 +902,7 @@ function optimizeLocalH(A::fPEPS,
     vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
     @debug "\tBuilding H for col $col row $row"
     @timeit "build H" begin
-        Hs, N = buildLocalH(A, L, R, AncEnvs, H, row, col, A[row, col])
+        Hs, N = buildLocalH(A, L, R, AncEnvs, H, row, col, A[row, col], verbose=true)
     end
     initial_N = real(scalar(collect(N * dag(A[row, col])')))
     @timeit "sum H terms" begin
