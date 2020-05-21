@@ -10,7 +10,7 @@ function measureXmag(A::fPEPS,
     X[s(2), s'(1)] = 0.5
     Ny, Nx = size(A)
     is_cu  = is_gpu(A)
-    dummyI = is_cu ? MPS(Ny, fill(cuITensor(1.0), Ny), 0, Ny+1) : MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
+    dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
     dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
     measuredX = zeros(Ny)
     op = is_cu ? cuITensor(X) : X
@@ -39,7 +39,7 @@ function measureZmag(A::fPEPS,
     Z[s(2), s'(2)] = -0.5
     Nx, Ny = size(A)
     is_cu  = is_gpu(A)
-    dummyI = is_cu ? MPS(Ny, fill(cuITensor(1.0), Ny), 0, Ny+1) : MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
+    dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
     dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
     measuredZ = zeros(Ny)
     op = is_cu ? cuITensor(Z) : Z 
@@ -72,7 +72,7 @@ function measureSmagVertical(A::fPEPS,
     M[s(2), s'(1)] = 1.0
     Nx, Ny     = size(A)
     is_cu  = is_gpu(A)
-    dummyI = is_cu ? MPS(Ny, fill(cuITensor(1.0), Ny), 0, Ny+1) : MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
+    dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
     dummyEnv   = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
     measuredSV = zeros(Ny)
     is_cu     = is_gpu(A) 
@@ -118,7 +118,7 @@ function measureSmagHorizontal(A::fPEPS,
     M = is_cu ? cuITensor(M) : M
     Nx, Ny = size(A)
     is_cu  = is_gpu(A)
-    dummyI = is_cu ? MPS(Ny, fill(cuITensor(1.0), Ny), 0, Ny+1) : MPS(Ny, fill(ITensor(1.0), Ny), 0, Ny+1)
+    dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
     dummyEnv   = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
     measuredSH = zeros(Ny)
     SHs = Operator[]

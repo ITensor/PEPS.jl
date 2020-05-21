@@ -347,7 +347,7 @@ function verticalTerms(A::fPEPS,
                        ϕ::ITensor)::Vector{ITensor} 
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
-    vTerms = ITensor[]#fill(ITensor(), length(H))
+    vTerms = ITensor[]
     AAinds = inds(prime(ϕ))
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
     @inbounds for opcode in 1:length(H)
@@ -1006,7 +1006,7 @@ function rightwardSweep(A::fPEPS,
     simple_update_cutoff = get(kwargs, :simple_update_cutoff, 4)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A)
-    dummyI = is_cu ? MPS(fill(cuITensor(1.0), Ny), 0, Ny+1) : MPS(fill(ITensor(1.0), Ny), 0, Ny+1)
+    dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
     dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny)) 
     sweep::Int = get(kwargs, :sweep, 0)
     sweep_width::Int = get(kwargs, :sweep_width, Nx)
@@ -1052,7 +1052,7 @@ function leftwardSweep(A::fPEPS,
     simple_update_cutoff = get(kwargs, :simple_update_cutoff, 4)
     Ny, Nx = size(A)
     is_cu  = is_gpu(A)
-    dummyI = is_cu ? MPS(fill(cuITensor(1.0), Ny), 0, Ny+1) : MPS(fill(ITensor(1.0), Ny), 0, Ny+1)
+    dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
     dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny)) 
     sweep::Int = get(kwargs, :sweep, 0)
     sweep_width::Int = get(kwargs, :sweep_width, Nx)
