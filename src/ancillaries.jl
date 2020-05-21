@@ -33,8 +33,8 @@ function makeAncillaryFs(A::fPEPS, L::Environments, R::Environments, H, col::Int
     Ny, Nx   = size(A)
     is_cu    = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
+    Fabove   = [Vector{ITensor}(undef, Ny) for opcode in 1:length(H)]
     col_site_inds = [firstind(x, "Site") for x in A[:, col]]
-    Fabove   = fill(Vector{ITensor}(undef, Ny), length(H))
     for opcode in 1:length(H)
         op_row      = H[opcode].sites[1][1]
         ops         = map(x -> spinI(x; is_gpu=is_cu), col_site_inds)
@@ -81,7 +81,7 @@ function makeAncillaryVs(A::fPEPS, L::Environments, R::Environments, H, col::Int
     is_cu    = is_gpu(A) 
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     col_site_inds = [firstind(x, "Site") for x in A[:, col]]
-    Vabove   = fill(Vector{ITensor}(), length(H))
+    Vabove   = [Vector{ITensor}(undef, Ny) for opcode in 1:length(H)]
     for opcode in 1:length(H)
         op_row_a      = H[opcode].sites[1][1]
         op_row_b      = H[opcode].sites[2][1]
@@ -139,7 +139,7 @@ function makeAncillarySide(A::fPEPS, EnvIP::Environments, EnvIdent::Environments
     Ny, Nx   = size(A)
     is_cu    = is_gpu(A) 
     col_site_inds = [firstind(x, "Site") for x in A[:, col]]
-    Sabove   = fill(Vector{ITensor}(), length(H))
+    Sabove   = [Vector{ITensor}(undef, Ny) for opcode in 1:length(H)]
     next_col = side == :left ? col + 1 : col - 1
     dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
     for opcode in 1:length(H)
@@ -183,24 +183,6 @@ function updateAncillarySide(A::fPEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::E
         AA         *= prime(dag(A[row, col]))
         AA         *= EnvIP.InProgress[row, opcode]
         push!(Sbelow[opcode], AA)
-        #=AA            = A[row, col] * ops[row] * dag(A[row, col]')
-        if (col > 1 && side == :right) || (col < Nx && side == :left)
-            ci  = commonind(A[row, col], A[row, prev_col])
-            msi = multiply_side_ident(AA, ci, EnvIdent.I[row])
-            AA  = AA * msi
-        end
-        AA *= EnvIP.InProgress[row, opcode]
-        if row > 1
-            AAinds = inds(AA)
-            Sbinds = inds(Sbelow[opcode][row-1])
-            for aI in AAinds, sI in Sbinds
-                if hastags(aI, tags(sI)) && !hasind(AAinds, sI)
-                    Sbelow[opcode][row-1] = replaceind!(Sbelow[opcode][row-1], sI, aI)
-                end
-            end
-        end
-        thisS = row >= 2 ? Sbelow[opcode][row-1] * AA : AA
-        push!(Sbelow[opcode], thisS)=#
     end
     return Sbelow
 end

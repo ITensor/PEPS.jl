@@ -436,7 +436,7 @@ function fieldTerms(A::fPEPS,
     dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0) 
     AAinds = inds(prime(ϕ))
     @inbounds for opcode in 1:length(H)
-        thisField = dummy 
+        thisField = copy(dummy)
         op_row    = H[opcode].sites[1][1]
         if op_row != row
             local F, I
@@ -445,7 +445,7 @@ function fieldTerms(A::fPEPS,
                 I = row > 1 ? AI[:below][row - 1] : dummy
             else
                 F = AF[:below][opcode][row - 1]
-                I = row < Ny ? AI[:above][end - row] : dummy 
+                I = row < Ny ? AI[:above][end - row] : dummy
             end
             thisField *= F
             thisField *= L.I[row]
@@ -456,8 +456,8 @@ function fieldTerms(A::fPEPS,
         else
             low_row  = op_row - 1
             high_row = op_row
-            AIL = low_row > 0   ? AI[:below][low_row]        : dummy 
-            AIH = high_row < Ny ? AI[:above][end - high_row] : dummy 
+            AIL = low_row > 0   ? AI[:below][low_row]        : dummy
+            AIH = high_row < Ny ? AI[:above][end - high_row] : dummy
             thisField  = AIL
             thisField *= L.I[row]
             thisField *= ϕ
@@ -646,7 +646,7 @@ function buildLocalH(A::fPEPS,
         term_counter += length(fTs)
         if verbose
             println( "--- fT TERMS ---")
-            for fT in fTs
+            for (fi, fT) in enumerate(fTs)
                 println(scalar(fT * dag(ϕ)'))
             end
         end
@@ -688,7 +688,7 @@ function intraColumnGauge(A::fPEPS, col::Int; kwargs...)::fPEPS
     Ny, Nx = size(A)
     @inbounds for row in reverse(2:Ny)
         @debug "\tBeginning intraColumnGauge for col $col row $row"
-        cmb_is   = IndexSet(firstind(A[row, col], "Site"))
+        cmb_is     = IndexSet(firstind(A[row, col], "Site"))
         if col > 1
             cmb_is = IndexSet(cmb_is..., commonind(A[row, col], A[row, col - 1]))
         end
@@ -697,13 +697,17 @@ function intraColumnGauge(A::fPEPS, col::Int; kwargs...)::fPEPS
         end
         cmb = combiner(cmb_is, tags="CMB")
         Lis = IndexSet(combinedind(cmb)) #cmb_is
-        if row < Ny 
+        if row < Ny
             Lis = IndexSet(Lis..., commonind(A[row, col], A[row + 1, col]))
         end
-        Ac = A[row, col]*cmb
-        U, S, V = svd(Ac, Lis; kwargs...)
-        A[row, col]   = U*cmb
+        old_ci         = commonind(A[row, col], A[row-1, col])
+        Ac             = A[row, col]*cmb
+        U, S, V        = svd(Ac, Lis; kwargs...)
+        A[row, col]    = U*cmb
         A[row-1, col] *= (S*V)
+        new_ci         = commonind(A[row, col], A[row-1, col])
+        A[row, col]    = replaceind!(A[row, col], new_ci, old_ci)
+        A[row-1, col]  = replaceind!(A[row-1, col], new_ci, old_ci)
     end
     return A
 end
@@ -803,7 +807,6 @@ function buildAncs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
         Fa = makeAncillaryFs(A, L, R, fH, col)
         Fb = [Vector{ITensor}() for ii in 1:length(Fa)]
         Fs = (above=Fa, below=Fb)
-
     end
     Ls = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
     Rs = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
@@ -978,8 +981,8 @@ function sweepColumn(A::fPEPS,
         R_s = buildRs(A, H; kwargs...)
         EAncEnvs = buildAncs(A, L_s[col - 1], R_s[col + 1], H, col)
         N, E = measureEnergy(A, L_s[col - 1], R_s[col + 1], EAncEnvs, H, 1, col)
-        #println("Energy at MID: ", E/(Nx*Ny))
-        #println("Nx: ", Nx)
+        println("Energy at MID: ", E/(Nx*Ny))
+        println("Nx: ", Nx)
     end
     @debug "Beginning buildAncs for col $col"
     AncEnvs = buildAncs(A, L, R, H, col)
