@@ -146,3 +146,113 @@ function measureSmagHorizontal(A::fPEPS,
     end
     return measuredSH
 end
+
+function measure_correlators_heisenberg(A::fPEPS, H, sweep::Int; kwargs...)
+    Ny, Nx = size(A)
+    x_mag = zeros(Ny, Nx)
+    z_mag = zeros(Ny, Nx)
+    v_mag = zeros(Ny, Nx)
+    h_mag = zeros(Ny, Nx)
+    env_maxdim::Int = get(kwargs, :env_maxdim, 1)
+    maxdim::Int     = get(kwargs, :maxdim, 1)
+    mindim::Int     = get(kwargs, :mindim, 1)
+    cutoff::Float64 = get(kwargs, :cutoff, 0.0)
+    prefix::String  = get(kwargs, :prefix, "")
+    max_gauge_iter::Int = get(kwargs, :max_gauge_iter, 50)
+    if iseven(sweep)
+        L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        for col in reverse(1:Nx)
+            A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
+            x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            z_mag[:, col] = measureZmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            v_mag[:, col] = measureSmagVertical(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            if col < Nx
+                h_mag[:, col] = measureSmagHorizontal(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            end
+            if col > 1
+                A  = gaugeColumn(A, col, :left; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
+                if col < Nx
+                    R_s[col] = buildNextEnvironment(A, R_s[col+1], H, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                else
+                    right_H_terms = getDirectional(H[Nx-1], Horizontal)
+                    R_s[col] = buildEdgeEnvironment(A, H, right_H_terms, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                end
+            end
+        end
+    else
+        L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        for col in 1:Nx
+            A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
+            x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            z_mag[:, col] = measureZmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            v_mag[:, col] = measureSmagVertical(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            if col < Nx
+                h_mag[:, col] = measureSmagHorizontal(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            end
+            if col < Nx
+                A  = gaugeColumn(A, col, :right; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
+                if col > 1
+                    L_s[col] = buildNextEnvironment(A, L_s[col-1], H, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                else
+                    left_H_terms = getDirectional(H[1], Horizontal)
+                    L_s[col] = buildEdgeEnvironment(A, H, left_H_terms, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                end
+            end
+        end
+    end
+    writedlm(prefix*"_$(sweep)_x", x_mag)
+    writedlm(prefix*"_$(sweep)_z", z_mag)
+    writedlm(prefix*"_$(sweep)_v", v_mag)
+    writedlm(prefix*"_$(sweep)_h", h_mag)
+end
+
+function measure_correlators_ising(A::fPEPS, H, sweep::Int; kwargs...)
+    Ny, Nx = size(A)
+    x_mag = zeros(Ny, Nx)
+    z_mag = zeros(Ny, Nx)
+    env_maxdim::Int = get(kwargs, :env_maxdim, 1)
+    maxdim::Int     = get(kwargs, :maxdim, 1)
+    mindim::Int     = get(kwargs, :mindim, 1)
+    cutoff::Float64 = get(kwargs, :cutoff, 0.0)
+    prefix::String  = get(kwargs, :prefix, "")
+    max_gauge_iter::Int = get(kwargs, :max_gauge_iter, 50)
+    if iseven(sweep)
+        L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        for col in reverse(1:Nx)
+            A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
+            x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            z_mag[:, col] = measureZmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            if col > 1 
+                A  = gaugeColumn(A, col, :left; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
+                if col < Nx
+                    R_s[col] = buildNextEnvironment(A, R_s[col+1], H, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                else
+                    right_H_terms = getDirectional(H[Nx-1], Horizontal)
+                    R_s[col] = buildEdgeEnvironment(A, H, right_H_terms, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                end
+            end
+        end
+    else
+        L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        for col in 1:Nx
+            A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
+            x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            z_mag[:, col] = measureZmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            if col < Nx 
+                A  = gaugeColumn(A, col, :right; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
+                if col > 1
+                    L_s[col] = buildNextEnvironment(A, L_s[col-1], H, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                else
+                    left_H_terms = getDirectional(H[1], Horizontal)
+                    L_s[col] = buildEdgeEnvironment(A, H, left_H_terms, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+                end
+            end
+        end
+    end
+    writedlm(prefix*"_$(sweep)_x", x_mag)
+    writedlm(prefix*"_$(sweep)_z", z_mag)
+end

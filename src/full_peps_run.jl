@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate("..")
 using PEPS, ITensorsGPU, ITensors
-using TimerOutputs, Statistics, ArgParse, CUDAnative, Distributions, Logging, CuArrays
+using TimerOutputs, Random, Statistics, ArgParse, CUDAnative, Distributions, Logging, CuArrays
 
 s = ArgParseSettings()
 @add_arg_table! s begin
@@ -117,7 +117,7 @@ Rs = Vector{PEPS.Environments}(undef, Nx)
 @info "Built first Rs"
 
 # actual profiling run
-cA, tS, bytes, gctime, memallocs = @timed PEPS.doSweeps(cA, Ls, Rs, H; mindim=D, maxdim=D, simple_update_cutoff=parsed_args["simple_update_cutoff"], sweep_count=parsed_args["sweep_count"], cutoff=0.0, env_maxdim=χ, do_mag=parsed_args["do_mag"], prefix=parsed_args["prefix"])
+cA, tS, bytes, gctime, memallocs = @timed PEPS.doSweeps(cA, Ls, Rs, H; mindim=D, maxdim=D, simple_update_cutoff=parsed_args["simple_update_cutoff"], sweep_count=parsed_args["sweep_count"], cutoff=0.0, env_maxdim=χ, do_mag=parsed_args["do_mag"], prefix=parsed_args["prefix"], model=Symbol(parsed_args["model"]))
 println("Done sweeping GPU $tS")
 flush(stdout)
 flush(io)
