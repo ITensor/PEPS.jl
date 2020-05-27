@@ -45,6 +45,14 @@ s = ArgParseSettings()
         help = "J-parameter"
         arg_type = Float64
         default = 1.0
+    "--J1"
+        help = "J1-parameter"
+        arg_type = Float64
+        default = 1.0
+    "--J2"
+        help = "J2-parameter"
+        arg_type = Float64
+        default = 1.0
     "--hz"
         help = "Field in the z parameter, or random # bound"
         arg_type = Float64
@@ -75,7 +83,7 @@ D  = parsed_args["D"]
 parsed_args["device"] != 1 && device!(parsed_args["device"])
 
 # Hamiltonian parameters
-J     = parsed_args["J"] 
+J     = parsed_args["J"]
 sites = siteinds("S=1/2",Nx*Ny)
 
 # disallow scalar indexing on GPU, which is very slow 
@@ -87,6 +95,10 @@ cA = cufPEPS(A)
 H  = nothing
 if parsed_args["model"] == "XXZ"
     H  = PEPS.makeCuH_XXZ(Nx, Ny, J)
+elseif parsed_args["model"] == "J1J2"
+    J1 = parsed_args["J1"]
+    J2 = parsed_args["J2"]
+    H  = PEPS.makeCuH_J1J2(Nx, Ny, J1, J2)
 elseif parsed_args["model"] == "Ising"
     hz = parsed_args["hz"]
     hx = parsed_args["hx"]

@@ -151,7 +151,7 @@ function Base.show(io::IO, A::fPEPS)
   end
 end
 
-@enum Op_Type Field=0 Vertical=1 Horizontal=2
+@enum Op_Type Field=0 Vertical=1 Horizontal=2 Diag=3
 struct Operator
     sites::Vector{Pair{Int,Int}}
     ops::Vector{ITensor}
@@ -423,15 +423,207 @@ function verticalTerms(A::fPEPS,
     return vTerms
 end
 
-function fieldTerms(A::fPEPS, 
-                    L::Environments, 
-                    R::Environments, 
-                    AI, 
-                    AF, 
-                    H, 
-                    row::Int, 
-                    col::Int, 
-                    ϕ::ITensor)::Vector{ITensor} 
+function diagonalTerms(A::fPEPS,
+                       L::Environments,
+                       R::Environments,
+                       AI,
+                       AD,
+                       H,
+                       row::Int,
+                       col::Int,
+                       ϕ::ITensor)::Vector{ITensor} 
+    Ny, Nx = size(A)
+    is_cu  = is_gpu(A)
+    dTerms = Vector{ITensor}(undef, length(H))
+    AAinds = inds(prime(ϕ))
+    dummy  = is_cu ? cuITensor(1.0) : ITensor(1.0)
+    for opcode in 1:length(H)
+        thisDiag = dummy
+        op_row_a = H[opcode].sites[1][1]
+        op_row_b = H[opcode].sites[2][1]
+        op_col_a = H[opcode].sites[1][2]
+        op_col_b = H[opcode].sites[2][2]
+        side     = op_col_a < col  
+        max_op_row = max(op_row_a, op_row_b)
+        min_op_row = min(op_row_a, op_row_b)
+        if max_op_row < row || row < min_op_row
+            local D, I
+            if min_op_row > row
+                D = AD[:above][opcode][end - row]
+                I = row > 1 ? AD[:below][opcode][row - 1] : dummy 
+            elseif max_op_row < row
+                D = AD[:below][opcode][row - 1]
+                I = row < Ny ? AD[:above][opcode][end - row] : dummy
+            end
+            thisDiag *= D
+            thisDiag *= side ? L.DiagInProgress[row, opcode] : L.I[row]
+            thisDiag *= ϕ
+            thisDiag *= side ? R.I[row] : R.DiagInProgress[row, opcode]
+            thisDiag *= I
+            thisDiag *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
+            @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+            @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+        elseif row == op_row_a && col == op_col_a
+            low_row  = min(op_row_a, op_row_b) - 1
+            high_row = max(op_row_a, op_row_b)
+            AIL      = low_row  >= 1 ? AD[:below][opcode][low_row]        : dummy
+            AIH      = high_row < Ny ? AD[:above][opcode][end - high_row] : dummy
+            sA       = firstind(A[op_row_a, col], "Site")
+            op_a     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+            op_a     = replaceind!(op_a, H[opcode].site_ind', sA')
+            sB       = firstind(A[op_row_b, col], "Site")
+            op_b     = spinI(sB; is_gpu=is_cu)
+            if op_row_b > op_row_a
+                thisDiag  = AIH
+                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
+                thisDiag *= A[op_row_b, col] * op_b
+                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
+                thisDiag *= dag(A[op_row_b, col])'
+                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
+                thisDiag *= ϕ
+                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
+                thisDiag *= AIL
+                thisDiag *= op_a
+            else
+                thisDiag  = AIL
+                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
+                thisDiag *= A[op_row_b, col] * op_b
+                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
+                thisDiag *= dag(A[op_row_b, col])'
+                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
+                thisDiag *= ϕ
+                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
+                thisDiag *= AIH
+                thisDiag *= op_a
+            end
+            @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+            @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+        elseif row == op_row_b && col == op_col_b
+            low_row  = min(op_row_a, op_row_b) - 1
+            high_row = max(op_row_a, op_row_b)
+            AIL      = low_row  >= 1 ? AD[:below][opcode][low_row]    : dummy
+            AIH      = high_row < Ny ? AD[:above][opcode][end - high_row] : dummy
+            sA       = firstind(A[op_row_a, col], "Site")
+            op_a     = spinI(sA; is_gpu=is_cu)
+            sB       = firstind(A[op_row_b, col], "Site")
+            op_b     = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
+            op_b     = replaceind!(op_b, H[opcode].site_ind', sB')
+            if op_row_b > op_row_a
+                thisDiag  = AIL
+                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
+                thisDiag *= A[op_row_a, col] * op_a
+                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
+                thisDiag *= dag(A[op_row_a, col])'
+                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
+                thisDiag *= ϕ
+                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
+                thisDiag *= AIH
+                thisDiag *= op_b
+                @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+                @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+            else
+                thisDiag = AIH
+                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
+                thisDiag *= A[op_row_a, col] * op_a
+                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
+                thisDiag *= dag(A[op_row_a, col])'
+                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
+                thisDiag *= ϕ
+                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
+                thisDiag *= AIL
+                thisDiag *= op_b
+                @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+                @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+            end
+        elseif col == op_col_a && row == op_row_b
+            low_row  = min(op_row_a, op_row_b) - 1
+            high_row = max(op_row_a, op_row_b)
+            AIL      = low_row  >= 1 ? AD[:below][opcode][low_row]        : dummy
+            AIH      = high_row < Ny ? AD[:above][opcode][end - high_row] : dummy
+            sA       = firstind(A[op_row_a, col], "Site")
+            op_a     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+            op_a     = replaceind!(op_a, H[opcode].site_ind', sA')
+            sB       = firstind(A[op_row_b, col], "Site")
+            op_b     = spinI(sB; is_gpu=is_cu)
+            if op_row_b > op_row_a
+                thisDiag  = AIL
+                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
+                thisDiag *= A[op_row_a, col] * op_a
+                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
+                thisDiag *= dag(A[op_row_a, col])'
+                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
+                thisDiag *= ϕ
+                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
+                thisDiag *= AIH
+                thisDiag *= op_b
+                @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+                @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+            else
+                thisDiag  = AIH
+                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
+                thisDiag *= A[op_row_a, col] * op_a
+                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
+                thisDiag *= dag(A[op_row_a, col])'
+                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
+                thisDiag *= ϕ
+                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
+                thisDiag *= AIL
+                thisDiag *= op_b
+                @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+                @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+            end
+        elseif col == op_col_b && row == op_row_a
+            low_row  = min(op_row_a, op_row_b) - 1
+            high_row = max(op_row_a, op_row_b)
+            AIL      = low_row  >= 1 ? AD[:below][opcode][low_row]        : dummy
+            AIH      = high_row < Ny ? AD[:above][opcode][end - high_row] : dummy
+            sB       = firstind(A[op_row_b, col], "Site")
+            op_b     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sB)
+            op_b     = replaceind!(op_b, H[opcode].site_ind', sB')
+            sA       = firstind(A[op_row_a, col], "Site")
+            op_a     = spinI(sA; is_gpu=is_cu)
+            if op_row_b > op_row_a
+                thisDiag  = AIH
+                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
+                thisDiag *= A[op_row_b, col] * op_b
+                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
+                thisDiag *= dag(A[op_row_b, col])'
+                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
+                thisDiag *= ϕ
+                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
+                thisDiag *= AIL
+                thisDiag *= op_a
+            else
+                thisDiag  = AIL
+                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
+                thisDiag *= A[op_row_b, col] * op_b
+                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
+                thisDiag *= dag(A[op_row_b, col])'
+                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
+                thisDiag *= ϕ
+                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
+                thisDiag *= AIH
+                thisDiag *= op_a
+            end
+            @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+            @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
+        end
+        if hasinds(AAinds, inds(thisDiag)) && hasinds(inds(thisDiag), AAinds)
+            dTerms[opcode] = thisDiag
+        end
+    end
+    return dTerms
+end
+
+function fieldTerms(A::fPEPS,
+                    L::Environments,
+                    R::Environments,
+                    AI,
+                    AF,
+                    H,
+                    row::Int,
+                    col::Int,
+                    ϕ::ITensor)::Vector{ITensor}
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
     fTerms = Vector{ITensor}(undef, length(H))
@@ -508,7 +700,7 @@ function connectLeftTerms(A::fPEPS,
             thisHori  = ancL
             thisHori *= L.InProgress[row, opcode]
             thisHori *= ϕ
-            thisHori *= R.I[row]
+           thisHori *= R.I[row]
             thisHori *= I
             thisHori *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
         else
@@ -600,14 +792,18 @@ function buildLocalH(A::fPEPS,
         N   = buildN(A, L, R, AncEnvs[:I], row, col, ϕ)
     end
     den = scalar(collect(N * dag(ϕ)'))
-    local left_H_terms, right_H_terms
+    local left_H_terms, right_H_terms, diag_left_H_terms, diag_right_H_terms
     if col > 1
         left_H_terms = getDirectional(vcat(H[:, col - 1]...), Horizontal)
         term_count += length(left_H_terms)
+        diag_left_H_terms = getDirectional(vcat(H[:, col - 1]...), Diag)
+        term_count += length(diag_left_H_terms)
     end
     if col < Nx
         right_H_terms = getDirectional(vcat(H[:, col]...), Horizontal)
         term_count += length(right_H_terms)
+        diag_right_H_terms = getDirectional(vcat(H[:, col]...), Diag)
+        term_count += length(diag_right_H_terms)
     end
     if 1 < col < Nx
         term_count += 1
@@ -670,6 +866,20 @@ function buildLocalH(A::fPEPS,
             end
         end
         @debug "\t\tBuilt left terms"
+        @debug "\t\tBuilding left diag H terms row $row col $col"
+        @timeit "build diag left terms" begin
+            lTs = diagonalTerms(A, L, R, AncEnvs[:I], AncEnvs[:DL], diag_left_H_terms, row, col, ϕ)
+            Hs[term_counter:term_counter+length(lTs) - 1] = lTs[:]
+            term_counter += length(lTs)
+            if verbose
+                println( "--- diag lT TERMS col $col row $row ---")
+                for (ll, lT) in enumerate(lTs)
+                    println(left_H_terms[ll])
+                    println(scalar(lT * dag(ϕ)')/den)
+                end
+            end
+        end
+        @debug "\t\tBuilt diag left terms"
     end
     if col < Nx
         @debug "\t\tBuilding right H terms row $row col $col"
@@ -679,6 +889,19 @@ function buildLocalH(A::fPEPS,
             term_counter += length(rTs)
             if verbose
                 println( "--- rT TERMS col $col row $row ---")
+                for (rr, rT) in enumerate(rTs)
+                    println(right_H_terms[rr])
+                    println(scalar(rT * dag(ϕ)')/den)
+                end
+            end
+        end
+        @debug "\t\tBuilding right diag H terms row $row col $col"
+        @timeit "build diag right terms" begin
+            rTs = diagonalTerms(A, L, R, AncEnvs[:I], AncEnvs[:DR], diag_right_H_terms, row, col, ϕ)
+            Hs[term_counter:term_counter+length(rTs) - 1] = rTs[:]
+            term_counter += length(rTs)
+            if verbose
+                println( "--- diag rT TERMS col $col row $row ---")
                 for (rr, rT) in enumerate(rTs)
                     println(right_H_terms[rr])
                     println(scalar(rT * dag(ϕ)')/den)
@@ -816,12 +1039,20 @@ function buildAncs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
     end
     Ls = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
     Rs = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
+    DLs = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
+    DRs = (above=Vector{ITensor}(), below=Vector{ITensor}()) 
     if col > 1
         @timeit "makeAncLs" begin
             lH = getDirectional(vcat(H[:, col-1]...), Horizontal)
             La = makeAncillarySide(A, L, R, lH, col, :left)
             Lb = [Vector{ITensor}() for ii in  1:length(La)]
             Ls = (above=La, below=Lb)
+        end
+        @timeit "makeAncDLs" begin
+            lH = getDirectional(vcat(H[:, col-1]...), Diag)
+            La = makeAncillarySideDiag(A, L, R, lH, col, :left)
+            Lb = [Vector{ITensor}() for ii in  1:length(La)]
+            DLs = (above=La, below=Lb)
         end
     end
     if col < Nx
@@ -831,8 +1062,14 @@ function buildAncs(A::fPEPS, L::Environments, R::Environments, H, col::Int)
             Rb = [Vector{ITensor}() for ii in  1:length(Ra)]
             Rs = (above=Ra, below=Rb)
         end
+        @timeit "makeAncRs" begin
+            rH = getDirectional(vcat(H[:, col]...), Diag)
+            Ra = makeAncillarySideDiag(A, R, L, rH, col, :right)
+            Rb = [Vector{ITensor}() for ii in  1:length(Ra)]
+            DRs = (above=Ra, below=Rb)
+        end
     end
-    Ancs = (I=Is, V=Vs, F=Fs, L=Ls, R=Rs)
+    Ancs = (I=Is, V=Vs, F=Fs, L=Ls, R=Rs, DL=DLs, DR=DRs)
     return Ancs
 end
 
@@ -843,7 +1080,7 @@ function updateAncs(A::fPEPS,
     Ny, Nx = size(A)
     is_cu  = is_gpu(A) 
    
-    Is, Vs, Fs, Ls, Rs = AncEnvs
+    Is, Vs, Fs, Ls, Rs, DLs, DRs = AncEnvs
     @debug "\tUpdating ancillary identity terms for col $col row $row"
     Ib = updateAncillaryIs(A, Is[:below], L, R, row, col)
     Is = (above=Is[:above], below=Ib)
@@ -863,14 +1100,22 @@ function updateAncs(A::fPEPS,
         lH = getDirectional(vcat(H[:, col-1]...), Horizontal)
         Lb = updateAncillarySide(A, Ls[:below], Ib, L, R, lH, row, col, :left)
         Ls = (above=Ls[:above], below=Lb)
+        @debug "\tUpdating ancillary diag left terms for col $col row $row"
+        lH = getDirectional(vcat(H[:, col-1]...), Diag)
+        DLb = updateAncillarySideDiag(A, DLs[:below], Ib, L, R, lH, row, col, :left)
+        DLs = (above=DLs[:above], below=DLb)
     end
     if col < Nx
         @debug "\tUpdating ancillary right terms for col $col row $row"
         rH = getDirectional(vcat(H[:, col]...), Horizontal)
         Rb = updateAncillarySide(A, Rs[:below], Ib, R, L, rH, row, col, :right)
         Rs = (above=Rs[:above], below=Rb)
+        @debug "\tUpdating ancillary diag right terms for col $col row $row"
+        rH = getDirectional(vcat(H[:, col]...), Diag)
+        DRb = updateAncillarySideDiag(A, DRs[:below], Ib, R, L, rH, row, col, :right)
+        DRs = (above=DRs[:above], below=DRb)
     end
-    Ancs = (I=Is, V=Vs, F=Fs, L=Ls, R=Rs)
+    Ancs = (I=Is, V=Vs, F=Fs, L=Ls, R=Rs, DL=DLs, DR=DRs)
     return Ancs
 end
 
@@ -902,7 +1147,7 @@ function optimizeLocalH(A::fPEPS,
     vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
     @debug "\tBuilding H for col $col row $row"
     @timeit "build H" begin
-        Hs, N = buildLocalH(A, L, R, AncEnvs, H, row, col, A[row, col], verbose=true)
+        Hs, N = buildLocalH(A, L, R, AncEnvs, H, row, col, A[row, col])
     end
     initial_N = real(scalar(collect(N * dag(A[row, col])')))
     @timeit "sum H terms" begin
@@ -1013,7 +1258,7 @@ function rightwardSweep(A::fPEPS,
     Ny, Nx = size(A)
     is_cu  = is_gpu(A)
     dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
-    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny)) 
+    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny), fill(ITensor(), 1, Ny)) 
     sweep::Int = get(kwargs, :sweep, 0)
     sweep_width::Int = get(kwargs, :sweep_width, Nx)
     offset    = mod(Nx, 2)
@@ -1059,7 +1304,7 @@ function leftwardSweep(A::fPEPS,
     Ny, Nx = size(A)
     is_cu  = is_gpu(A)
     dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
-    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny)) 
+    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny), fill(ITensor(), 1, Ny)) 
     sweep::Int = get(kwargs, :sweep, 0)
     sweep_width::Int = get(kwargs, :sweep_width, Nx)
     offset    = mod(Nx, 2)

@@ -186,3 +186,61 @@ function updateAncillarySide(A::fPEPS, Sbelow, Ibelow::Vector{ITensor}, EnvIP::E
     end
     return Sbelow
 end
+
+function makeAncillarySideDiag(A::fPEPS, EnvIP::Environments, EnvIdent::Environments, H, col::Int, side::Symbol)
+    Ny, Nx   = size(A)
+    is_cu    = is_gpu(A) 
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
+    Sabove   = [Vector{ITensor}(undef, Ny) for opcode in 1:length(H)]
+    next_col = side == :left ? col + 1 : col - 1
+    dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
+    for opcode in 1:length(H)
+        op_row      = side == :left ? H[opcode].sites[2][1] : H[opcode].sites[1][1] 
+        ops         = map(x->spinI(x; is_gpu=is_cu), col_site_inds)
+        this_op     = side == :left ? H[opcode].ops[2] : H[opcode].ops[1]
+        ops[op_row] = replaceind!(copy(this_op), H[opcode].site_ind, col_site_inds[op_row])
+        ops[op_row] = replaceind!(ops[op_row], H[opcode].site_ind', col_site_inds[op_row]')
+        AAs         = Vector{ITensor}(undef, Ny) 
+        AA          = copy(dummy)
+        for row in reverse(1:Ny)
+            AA *= EnvIdent.I[row]
+            AA *= A[row, col]
+            AA *= ops[row]
+            AA *= dag(prime(A[row, col]))
+            AA *= EnvIP.DiagInProgress[row, opcode]
+            AAs[row] = copy(AA)
+        end
+        Sabove[opcode] = reverse(AAs)
+    end
+    return Sabove
+end
+
+function updateAncillarySideDiag(A::fPEPS, Dbelow, Ibelow::Vector{ITensor}, EnvIP::Environments, EnvIdent::Environments, H, row::Int, col::Int, side::Symbol)
+    Ny, Nx   = size(A)
+    is_cu    = is_gpu(A)
+    next_col = side == :left ? col + 1 : col - 1
+    prev_col = side == :left ? col + 1 : col - 1
+    dummy    = is_cu    ? cuITensor(1.0)  : ITensor(1.0) 
+    col_site_inds = [firstind(x, "Site") for x in A[:, col]]
+    for opcode in 1:length(H)
+        op_row_a      = H[opcode].sites[1][1]
+        op_row_b      = H[opcode].sites[2][1]
+        op_col_a      = H[opcode].sites[1][2]
+        op_col_b      = H[opcode].sites[2][2]
+        ops           = map(x->spinI(x; is_gpu=is_cu), col_site_inds)
+        if op_col_a == col
+            ops[op_row_a] = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, col_site_inds[op_row_a])
+            ops[op_row_a] = replaceind!(ops[op_row_a], H[opcode].site_ind', col_site_inds[op_row_a]')
+        else
+            ops[op_row_b] = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, col_site_inds[op_row_b])
+            ops[op_row_b] = replaceind!(ops[op_row_b], H[opcode].site_ind', col_site_inds[op_row_b]')
+        end
+        ancD  = row >= 2 ? copy(Dbelow[opcode][row-1]) : copy(dummy)
+        ancD *= EnvIdent.I[row]
+        ancD *= A[row, col]
+        ancD *= ops[row] * dag(prime(A[row, col]))
+        ancD *= EnvIP.DiagInProgress[row, opcode]
+        push!(Dbelow[opcode], ancD)
+    end
+    return Dbelow
+end

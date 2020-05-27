@@ -2,6 +2,7 @@ struct Environments
     I::MPS
     H::MPS
     InProgress::Matrix{ITensor}
+    DiagInProgress::Matrix{ITensor}
 end
 
 function Base.copy(E::Environments)
@@ -68,10 +69,10 @@ function constructEnvsAbove(A::fPEPS, guess::MPS, prev_mps::Vector{<:ITensor}, o
     Envs_above = Vector{ITensor}(undef, Ny+1)
     Envs_above[end]  = is_cu ? cuITensor(1.0) : ITensor(1.0)
     @inbounds for (ii, env_row) in enumerate(reverse(order))
-        tmp = A[env_row, col]
+        tmp  = A[env_row, col]
         tmp *= ops[env_row]
         tmp *= prev_mps[env_row]
-        next_row = isodd(sweep) ? env_row + 1 : env_row - 1
+        next_row   = isodd(sweep) ? env_row + 1 : env_row - 1
         Env_above  = next_row > 0 ? copy(Envs_above[next_row]) : dummy 
         Env_above *= tmp
         Env_above *= dag(prime(A[env_row, col]))
@@ -199,7 +200,6 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
     field_H_terms   = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms    = getDirectional(vcat(H[:, col]...), Vertical)
     vHs             = [buildNewVerticals(A, vert_H_terms[vert_op], dummy_mps, col, chi) for vert_op in 1:length(vert_H_terms)]
-    @debug "Built new Vs"
     fHs             = [buildNewFields(A, field_H_terms[field_op], dummy_mps, col, chi) for field_op in 1:length(field_H_terms)]
     Hs              = vcat(vHs, fHs)
     maxdim::Int     = get(kwargs, :maxdim, 1)
@@ -218,17 +218,18 @@ function buildEdgeEnvironment(A::fPEPS, H, left_H_terms, side::Symbol, col::Int;
     @inbounds for row in 1:Ny
         H_overall[row] *= hori_cmbs[row]
     end
-    @debug "Summed Hs, maxdim=$maxdim"
     side_H          = side == :left ? H[:, col] : H[:, col - 1]
     side_H_terms    = getDirectional(vcat(side_H...), Horizontal)
-    @debug "Trying to alloc $(Ny*length(side_H_terms))"
     in_progress     = Matrix{ITensor}(undef, Ny, length(side_H_terms))
     @inbounds for side_term in 1:length(side_H_terms)
-        @debug "Generating edge bonds for term $side_term"
         in_progress[1:Ny, side_term] = generateEdgeDanglingBonds(A, side_H_terms[side_term], side, col, chi)
     end
-    @debug "Generated edge bonds"
-    return Environments(I_mps, H_overall, in_progress)
+    diag_H_terms     = getDirectional(vcat(side_H...), Diag)
+    diag_in_progress = Matrix{ITensor}(undef, Ny, length(diag_H_terms))
+    @inbounds for diag_term in 1:length(diag_H_terms)
+        diag_in_progress[1:Ny, diag_term] = generateEdgeDanglingBonds(A, diag_H_terms[diag_term], side, col, chi)
+    end
+    return Environments(I_mps, H_overall, in_progress, diag_in_progress)
 end
 
 function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
@@ -241,14 +242,16 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
         new_I = buildNewI(A, prev_Env.I, col, chi)
         new_H = buildNewI(A, prev_Env.H, col, chi)
     end
-    @debug "Built new I and H"
     field_H_terms = getDirectional(vcat(H[:, col]...), Field)
     vert_H_terms  = getDirectional(vcat(H[:, col]...), Vertical)
     hori_H_terms  = getDirectional(vcat(H[:, col]...), Horizontal)
+    diag_H_terms  = getDirectional(vcat(H[:, col]...), Diag)
     side_H        = side == :left ? H[:, col] : H[:, col - 1]
     side_H_terms  = getDirectional(vcat(side_H...), Horizontal)
+    diag_side_H_terms = getDirectional(vcat(side_H...), Diag)
     H_term_count  = 1 + length(field_H_terms) + length(vert_H_terms)
     H_term_count += (side == :left ? length(side_H_terms) : length(hori_H_terms))
+    H_term_count += (side == :left ? length(diag_side_H_terms) : length(diag_H_terms))
     new_H_mps     = Vector{MPS}(undef, H_term_count)
     new_H_mps[1]  = deepcopy(new_H)
     @timeit "build new verts" begin
@@ -264,8 +267,13 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
             new_H_mps[length(vert_H_terms) + length(field_H_terms) + 1 + cc] = MPS(new_H, 0, Ny+1)
         end
     end
-    @debug "Connected dangling bonds"
-
+    diag_connect_H = side == :left ? diag_side_H_terms : diag_H_terms
+    @timeit "connect dangling bonds" begin
+        @inbounds for (cc, cH) in enumerate(diag_connect_H)
+            new_H = connectDanglingBonds(A, cH, prev_Env.DiagInProgress[:, cc], side, col; kwargs...)
+            new_H_mps[length(vert_H_terms) + length(field_H_terms) + length(connect_H) + 1 + cc] = MPS(new_H, 0, Ny+1)
+        end
+    end
     maxdim::Int     = get(kwargs, :maxdim, 1)
     cutoff::Float64 = get(kwargs, :cutoff, 0.0)
     @timeit "sum H mps" begin
@@ -284,16 +292,21 @@ function buildNextEnvironment(A::fPEPS, prev_Env::Environments, H,
             H_overall[row] *= hori_cmbs[row]
         end
     end
-    @debug "Summed Hs"
     gen_H_terms  = side == :left ? hori_H_terms : side_H_terms
-    in_progress  = Matrix{ITensor}(undef, Ny, length(side_H_terms))
+    in_progress  = Matrix{ITensor}(undef, Ny, length(gen_H_terms))
     @timeit "gen dangling bonds" begin
         @inbounds for side_term in 1:length(gen_H_terms)
             in_progress[1:Ny, side_term] = generateNextDanglingBonds(A, gen_H_terms[side_term], prev_Env.I, side, col; kwargs...)
         end
     end
-    @debug "Generated next dangling bonds"
-    return Environments(new_I, H_overall, in_progress)
+    diag_gen_H_terms  = side == :left ? diag_H_terms : diag_side_H_terms
+    diag_in_progress  = Matrix{ITensor}(undef, Ny, length(diag_gen_H_terms))
+    @timeit "diag gen dangling bonds" begin
+        @inbounds for side_term in 1:length(diag_gen_H_terms)
+            diag_in_progress[1:Ny, side_term] = generateNextDanglingBonds(A, diag_gen_H_terms[side_term], prev_Env.I, side, col; kwargs...)
+        end
+    end
+    return Environments(new_I, H_overall, in_progress, diag_in_progress)
 end
 
 function buildNewVerticals(A::fPEPS, H, prev_I::MPS, col::Int, chi::Int)::MPS
@@ -332,20 +345,6 @@ function buildNewI(A::fPEPS, prev_I::MPS, col::Int, chi::Int)::MPS
     return fitPEPSMPO(A, data(prev_I), ops, col, chi)
 end
 
-function generateEdgeDanglingBonds(A::fPEPS, H, side::Symbol, col::Int, chi::Int)::Vector{ITensor}
-    Ny, Nx         = size(A)
-    is_cu          = is_gpu(A)
-    dummy          = [is_cu ? cuITensor(1.0) : ITensor(1.0) for row in 1:Ny]
-    op_row         = side == :left ? H.sites[1][1] : H.sites[2][1]
-    H_op           = side == :left ? H.ops[1]      : H.ops[2]
-    col_site_inds  = [firstind(A[row, col], "Site") for row in 1:Ny]
-    ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds] 
-    ops[op_row]    = replaceind!(copy(H_op), H.site_ind, col_site_inds[op_row]) 
-    ops[op_row]    = replaceind!(ops[op_row], H.site_ind', col_site_inds[op_row]') 
-    #return data(fitPEPSMPOold(A, dummy, ops, col, chi))
-    return data(fitPEPSMPO(A, dummy, ops, col, chi))
-end
-
 function generateNextDanglingBonds(A::fPEPS,
                                    H,
                                    Ident::MPS,
@@ -363,6 +362,20 @@ function generateNextDanglingBonds(A::fPEPS,
     ops[op_row]     = replaceind!(ops[op_row], H.site_ind', col_site_inds[op_row]')
     #return data(fitPEPSMPOold(A, data(Ident), ops, col, chi))
     return data(fitPEPSMPO(A, data(Ident), ops, col, chi))
+end
+
+function generateEdgeDanglingBonds(A::fPEPS, H, side::Symbol, col::Int, chi::Int)::Vector{ITensor}
+    Ny, Nx         = size(A)
+    is_cu          = is_gpu(A)
+    dummy          = [is_cu ? cuITensor(1.0) : ITensor(1.0) for row in 1:Ny]
+    op_row         = side == :left ? H.sites[1][1] : H.sites[2][1]
+    H_op           = side == :left ? H.ops[1]      : H.ops[2]
+    col_site_inds  = [firstind(A[row, col], "Site") for row in 1:Ny]
+    ops            = ITensor[spinI(spin_ind; is_gpu=is_cu) for spin_ind in col_site_inds]
+    ops[op_row]    = replaceind!(copy(H_op), H.site_ind, col_site_inds[op_row])
+    ops[op_row]    = replaceind!(ops[op_row], H.site_ind', col_site_inds[op_row]')
+    #return data(fitPEPSMPOold(A, dummy, ops, col, chi))
+    return data(fitPEPSMPO(A, dummy, ops, col, chi))
 end
 
 function connectDanglingBonds(A::fPEPS,
@@ -392,7 +405,7 @@ function buildLs(A::fPEPS, H; kwargs...)
     Ls             = Vector{Environments}(undef, Nx)
     start_col::Int = get(kwargs, :start_col, 1)
     if start_col == 1
-        left_H_terms = getDirectional(H[1], Horizontal)
+        left_H_terms = getDirectional(vcat(H[:, 1]...), Horizontal)
         @debug "Building left col $start_col"
         Ls[1] = buildEdgeEnvironment(A, H, left_H_terms, :left, 1; kwargs...)
     end
@@ -409,7 +422,7 @@ function buildRs(A::fPEPS, H; kwargs...)
     start_col::Int = get(kwargs, :start_col, Nx)
     Rs             = Vector{Environments}(undef, Nx)
     if start_col == Nx
-        right_H_terms = getDirectional(H[Nx-1], Horizontal)
+        right_H_terms  = getDirectional(vcat(H[:, Nx - 1]...), Horizontal)
         Rs[Nx]        = buildEdgeEnvironment(A, H, right_H_terms, :right, Nx; kwargs...)
     end
     loop_col = start_col == Nx ? Nx - 1 : start_col
