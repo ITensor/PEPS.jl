@@ -463,18 +463,25 @@ function diagonalTerms(A::fPEPS,
             thisDiag *= spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
             @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
             @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-        elseif row == op_row_a && col == op_col_a
+        else
             low_row  = min(op_row_a, op_row_b) - 1
             high_row = max(op_row_a, op_row_b)
             AIL      = low_row  >= 1 ? AD[:below][opcode][low_row]        : dummy
             AIH      = high_row < Ny ? AD[:above][opcode][end - high_row] : dummy
             sA       = firstind(A[op_row_a, col], "Site")
-            op_a     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
-            op_a     = replaceind!(op_a, H[opcode].site_ind', sA')
             sB       = firstind(A[op_row_b, col], "Site")
-            op_b     = spinI(sB; is_gpu=is_cu)
-            if op_row_b > op_row_a
-                thisDiag  = AIH
+            local op_a, op_b
+            if row == op_row_a
+                if col == op_col_a
+                    op_a     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+                    op_a     = replaceind!(op_a, H[opcode].site_ind', sA')
+                    op_b     = spinI(sB; is_gpu=is_cu)
+                elseif col == op_col_b
+                    op_b     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sB)
+                    op_b     = replaceind!(op_b, H[opcode].site_ind', sB')
+                    op_a     = spinI(sA; is_gpu=is_cu)
+                end
+                thisDiag  = op_row_b > op_row_a ? AIH : AIL
                 thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
                 thisDiag *= A[op_row_b, col] * op_b
                 thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
@@ -482,34 +489,19 @@ function diagonalTerms(A::fPEPS,
                 thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
                 thisDiag *= ϕ
                 thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
-                thisDiag *= AIL
+                thisDiag *= op_row_b > op_row_a ? AIL : AIH
                 thisDiag *= op_a
-            else
-                thisDiag  = AIL
-                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
-                thisDiag *= A[op_row_b, col] * op_b
-                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
-                thisDiag *= dag(A[op_row_b, col])'
-                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
-                thisDiag *= ϕ
-                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
-                thisDiag *= AIH
-                thisDiag *= op_a
-            end
-            @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-            @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-        elseif row == op_row_b && col == op_col_b
-            low_row  = min(op_row_a, op_row_b) - 1
-            high_row = max(op_row_a, op_row_b)
-            AIL      = low_row  >= 1 ? AD[:below][opcode][low_row]    : dummy
-            AIH      = high_row < Ny ? AD[:above][opcode][end - high_row] : dummy
-            sA       = firstind(A[op_row_a, col], "Site")
-            op_a     = spinI(sA; is_gpu=is_cu)
-            sB       = firstind(A[op_row_b, col], "Site")
-            op_b     = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
-            op_b     = replaceind!(op_b, H[opcode].site_ind', sB')
-            if op_row_b > op_row_a
-                thisDiag  = AIL
+            elseif row == op_row_b
+                if col == op_col_b
+                    op_a     = spinI(sA; is_gpu=is_cu)
+                    op_b     = replaceind!(copy(H[opcode].ops[2]), H[opcode].site_ind, sB)
+                    op_b     = replaceind!(op_b, H[opcode].site_ind', sB')
+                elseif col == op_col_a
+                    op_a     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
+                    op_a     = replaceind!(op_a, H[opcode].site_ind', sA')
+                    op_b     = spinI(sB; is_gpu=is_cu)
+                end
+                thisDiag  = op_row_b > op_row_a ? AIL : AIH
                 thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
                 thisDiag *= A[op_row_a, col] * op_a
                 thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
@@ -517,93 +509,8 @@ function diagonalTerms(A::fPEPS,
                 thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
                 thisDiag *= ϕ
                 thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
-                thisDiag *= AIH
+                thisDiag *= op_row_b > op_row_a ? AIH : AIL
                 thisDiag *= op_b
-                @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-                @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-            else
-                thisDiag = AIH
-                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
-                thisDiag *= A[op_row_a, col] * op_a
-                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
-                thisDiag *= dag(A[op_row_a, col])'
-                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
-                thisDiag *= ϕ
-                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
-                thisDiag *= AIL
-                thisDiag *= op_b
-                @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-                @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-            end
-        elseif col == op_col_a && row == op_row_b
-            low_row  = min(op_row_a, op_row_b) - 1
-            high_row = max(op_row_a, op_row_b)
-            AIL      = low_row  >= 1 ? AD[:below][opcode][low_row]        : dummy
-            AIH      = high_row < Ny ? AD[:above][opcode][end - high_row] : dummy
-            sA       = firstind(A[op_row_a, col], "Site")
-            op_a     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sA)
-            op_a     = replaceind!(op_a, H[opcode].site_ind', sA')
-            sB       = firstind(A[op_row_b, col], "Site")
-            op_b     = spinI(sB; is_gpu=is_cu)
-            if op_row_b > op_row_a
-                thisDiag  = AIL
-                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
-                thisDiag *= A[op_row_a, col] * op_a
-                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
-                thisDiag *= dag(A[op_row_a, col])'
-                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
-                thisDiag *= ϕ
-                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
-                thisDiag *= AIH
-                thisDiag *= op_b
-                @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-                @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-            else
-                thisDiag  = AIH
-                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
-                thisDiag *= A[op_row_a, col] * op_a
-                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
-                thisDiag *= dag(A[op_row_a, col])'
-                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
-                thisDiag *= ϕ
-                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
-                thisDiag *= AIL
-                thisDiag *= op_b
-                @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-                @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
-            end
-        elseif col == op_col_b && row == op_row_a
-            low_row  = min(op_row_a, op_row_b) - 1
-            high_row = max(op_row_a, op_row_b)
-            AIL      = low_row  >= 1 ? AD[:below][opcode][low_row]        : dummy
-            AIH      = high_row < Ny ? AD[:above][opcode][end - high_row] : dummy
-            sB       = firstind(A[op_row_b, col], "Site")
-            op_b     = replaceind!(copy(H[opcode].ops[1]), H[opcode].site_ind, sB)
-            op_b     = replaceind!(op_b, H[opcode].site_ind', sB')
-            sA       = firstind(A[op_row_a, col], "Site")
-            op_a     = spinI(sA; is_gpu=is_cu)
-            if op_row_b > op_row_a
-                thisDiag  = AIH
-                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
-                thisDiag *= A[op_row_b, col] * op_b
-                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
-                thisDiag *= dag(A[op_row_b, col])'
-                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
-                thisDiag *= ϕ
-                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
-                thisDiag *= AIL
-                thisDiag *= op_a
-            else
-                thisDiag  = AIL
-                thisDiag *= side ? L.DiagInProgress[op_row_b, opcode] : L.I[op_row_b]
-                thisDiag *= A[op_row_b, col] * op_b
-                thisDiag *= side ? R.I[op_row_b] : R.DiagInProgress[op_row_b, opcode]
-                thisDiag *= dag(A[op_row_b, col])'
-                thisDiag *= side ? L.DiagInProgress[op_row_a, opcode] : L.I[op_row_a]
-                thisDiag *= ϕ
-                thisDiag *= side ? R.I[op_row_a] : R.DiagInProgress[op_row_a, opcode]
-                thisDiag *= AIH
-                thisDiag *= op_a
             end
             @assert hasinds(inds(thisDiag), AAinds) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
             @assert hasinds(AAinds, inds(thisDiag)) "inds of thisDiag and AAinds differ!\n$(inds(thisDiag))\n$AAinds\n"
