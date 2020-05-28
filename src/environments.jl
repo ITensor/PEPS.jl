@@ -406,7 +406,7 @@ function buildLs(A::fPEPS, H; kwargs...)
     start_col::Int = get(kwargs, :start_col, 1)
     if start_col == 1
         left_H_terms = getDirectional(vcat(H[:, 1]...), Horizontal)
-        Ls[1] = buildEdgeEnvironment(A, H, left_H_terms, :left, 1; kwargs...)
+        Ls[1]        = buildEdgeEnvironment(A, H, left_H_terms, :left, 1; kwargs...)
     end
     loop_col = start_col == 1 ? 2 : start_col
     @inbounds for col in loop_col:(Nx-1)
@@ -421,7 +421,7 @@ function buildRs(A::fPEPS, H; kwargs...)
     start_col::Int = get(kwargs, :start_col, Nx)
     Rs             = Vector{Environments}(undef, Nx)
     if start_col == Nx
-        right_H_terms  = getDirectional(vcat(H[:, Nx - 1]...), Horizontal)
+        right_H_terms = getDirectional(vcat(H[:, Nx-1]...), Horizontal)
         Rs[Nx]        = buildEdgeEnvironment(A, H, right_H_terms, :right, Nx; kwargs...)
     end
     loop_col = start_col == Nx ? Nx - 1 : start_col
