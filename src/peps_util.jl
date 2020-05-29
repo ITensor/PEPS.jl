@@ -1772,8 +1772,6 @@ function sweepColumn(A::fPEPS,
         R_s = buildRs(A, H; kwargs...)
         EAncEnvs = buildAncs(A, L_s[col - 1], R_s[col + 1], H, col)
         N, E = measureEnergy(A, L_s[col - 1], R_s[col + 1], EAncEnvs, H, 1, col)
-        println("Energy at MID: ", E/(Nx*Ny))
-        println("Nx: ", Nx)
     end
     @debug "Beginning buildAncs for col $col"
     AncEnvs = buildAncs(A, L, R, H, col)
@@ -1912,6 +1910,7 @@ function doSweeps(A::fPEPS,
                   two_site::Bool=false)
     Ny, Nx = size(A) 
     for sweep in sweep_start:sweep_count
+        CuArrays.memory_status()
         if iseven(sweep)
             (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter, two_site=two_site)
             println("SWEEP RIGHT $sweep, time $this_time")
@@ -1929,10 +1928,12 @@ function doSweeps(A::fPEPS,
         end
         # make this dispatch at some point
         if do_mag && model == :XXZ
-            measure_correlators_heisenberg(copy(A), H, sweep;  mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, prefix=prefix)
+            measure_correlators_heisenberg(copy(A), H, Ls, Rs, sweep;  mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, prefix=prefix)
         elseif do_mag && model == :Ising
-            measure_correlators_ising(copy(A), H, sweep; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, prefix=prefix)
+            measure_correlators_ising(copy(A), H, Ls, Rs, sweep; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, prefix=prefix)
         end
+        CuArrays.memory_status()
+        println("---- done sweep $sweep ----")
     end
     return A
 end

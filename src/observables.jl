@@ -92,13 +92,10 @@ function measureSmagVertical(A::fPEPS,
     vTs = verticalTerms(A, tL, tR, (above=AI,), (above=AV,), SVs, 1, col, A[1, col])
     N   = buildN(A, tL, tR, (above=AI,), 1, col, A[1, col])
     nrm = scalar(N * dag(A[1, col]'))
-    #=println( "--- vertical TERMS col $col ---")
     for (vi, vT) in enumerate(vTs)
         row = SVs[vi].sites[1][1]
-        println(SVs[vi])
-        println(scalar(vT * dag(A[1, col]'))/nrm)
         measuredSV[row] += scalar(vT * dag(A[1, col]'))/nrm
-    end=#
+    end
     return measuredSV
 end
 
@@ -137,17 +134,14 @@ function measureSmagHorizontal(A::fPEPS,
     hTs = connectRightTerms(A, tL, tR, (above=AI,), (above=AS,), SHs, 1, col, A[1, col])
     N  = buildN(A, tL, tR, (above=AI,), 1, col, A[1, col])
     nrm = scalar(N * dag(A[1, col]'))
-    #=println( "--- horizontal TERMS col $col ---")
     for (hi, hT) in enumerate(hTs)
         row = SHs[hi].sites[1][1]
-        println(SHs[hi])
-        println(scalar(hT * dag(A[1, col]'))/nrm)
         measuredSH[row] += scalar(hT * dag(A[1, col]'))/nrm
-    end=#
+    end
     return measuredSH
 end
 
-function measure_correlators_heisenberg(A::fPEPS, H, sweep::Int; kwargs...)
+function measure_correlators_heisenberg(A::fPEPS, H, Ls, Rs, sweep::Int; kwargs...)
     Ny, Nx = size(A)
     x_mag = zeros(Ny, Nx)
     z_mag = zeros(Ny, Nx)
@@ -160,15 +154,15 @@ function measure_correlators_heisenberg(A::fPEPS, H, sweep::Int; kwargs...)
     prefix::String  = get(kwargs, :prefix, "")
     max_gauge_iter::Int = get(kwargs, :max_gauge_iter, 50)
     if iseven(sweep)
-        L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
-        R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        #R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        R_s = Vector{PEPS.Environments}(undef, Nx)
         for col in reverse(1:Nx)
             A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
-            x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
-            z_mag[:, col] = measureZmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
-            v_mag[:, col] = measureSmagVertical(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            x_mag[:, col] = measureXmag(A, Ls, R_s, col; mindim=mindim, maxdim=maxdim)
+            z_mag[:, col] = measureZmag(A, Ls, R_s, col; mindim=mindim, maxdim=maxdim)
+            v_mag[:, col] = measureSmagVertical(A, Ls, R_s, col; mindim=mindim, maxdim=maxdim)
             if col < Nx
-                h_mag[:, col] = measureSmagHorizontal(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+                h_mag[:, col] = measureSmagHorizontal(A, Ls, R_s, col; mindim=mindim, maxdim=maxdim)
             end
             if col > 1
                 A  = gaugeColumn(A, col, :left; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
@@ -181,15 +175,15 @@ function measure_correlators_heisenberg(A::fPEPS, H, sweep::Int; kwargs...)
             end
         end
     else
-        L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
-        R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        #L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        L_s = Vector{PEPS.Environments}(undef, Nx)
         for col in 1:Nx
             A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
-            x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
-            z_mag[:, col] = measureZmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
-            v_mag[:, col] = measureSmagVertical(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            x_mag[:, col] = measureXmag(A, L_s, Rs, col; mindim=mindim, maxdim=maxdim)
+            z_mag[:, col] = measureZmag(A, L_s, Rs, col; mindim=mindim, maxdim=maxdim)
+            v_mag[:, col] = measureSmagVertical(A, L_s, Rs, col; mindim=mindim, maxdim=maxdim)
             if col < Nx
-                h_mag[:, col] = measureSmagHorizontal(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+                h_mag[:, col] = measureSmagHorizontal(A, L_s, Rs, col; mindim=mindim, maxdim=maxdim)
             end
             if col < Nx
                 A  = gaugeColumn(A, col, :right; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
@@ -208,7 +202,7 @@ function measure_correlators_heisenberg(A::fPEPS, H, sweep::Int; kwargs...)
     writedlm(prefix*"_$(sweep)_h", h_mag)
 end
 
-function measure_correlators_ising(A::fPEPS, H, sweep::Int; kwargs...)
+function measure_correlators_ising(A::fPEPS, H, Ls, Rs, sweep::Int; kwargs...)
     Ny, Nx = size(A)
     x_mag = zeros(Ny, Nx)
     z_mag = zeros(Ny, Nx)
@@ -220,12 +214,10 @@ function measure_correlators_ising(A::fPEPS, H, sweep::Int; kwargs...)
     max_gauge_iter::Int = get(kwargs, :max_gauge_iter, 50)
     if iseven(sweep)
         R_s = Vector{PEPS.Environments}(undef, Nx)
-        L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
-        #R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
         for col in reverse(1:Nx)
             A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
-            x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
-            z_mag[:, col] = measureZmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            x_mag[:, col] = measureXmag(A, Ls, R_s, col; mindim=mindim, maxdim=maxdim)
+            z_mag[:, col] = measureZmag(A, Ls, R_s, col; mindim=mindim, maxdim=maxdim)
             if col > 1 
                 A  = gaugeColumn(A, col, :left; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
                 if col < Nx
@@ -237,13 +229,11 @@ function measure_correlators_ising(A::fPEPS, H, sweep::Int; kwargs...)
             end
         end
     else
-        #L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
         L_s = Vector{PEPS.Environments}(undef, Nx)
-        R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
         for col in 1:Nx
             A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
-            x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
-            z_mag[:, col] = measureZmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
+            x_mag[:, col] = measureXmag(A, L_s, Rs, col; mindim=mindim, maxdim=maxdim)
+            z_mag[:, col] = measureZmag(A, L_s, Rs, col; mindim=mindim, maxdim=maxdim)
             if col < Nx 
                 A  = gaugeColumn(A, col, :right; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, overlap_cutoff=0.999, max_gauge_iter=max_gauge_iter)
                 if col > 1
