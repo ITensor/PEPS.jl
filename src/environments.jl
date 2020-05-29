@@ -406,7 +406,6 @@ function buildLs(A::fPEPS, H; kwargs...)
     start_col::Int = get(kwargs, :start_col, 1)
     if start_col == 1
         left_H_terms = getDirectional(vcat(H[:, 1]...), Horizontal)
-        @debug "Building left col $start_col"
         Ls[1] = buildEdgeEnvironment(A, H, left_H_terms, :left, 1; kwargs...)
     end
     loop_col = start_col == 1 ? 2 : start_col

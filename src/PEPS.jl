@@ -1,7 +1,7 @@
 module PEPS
 
 using ITensors, ITensorsGPU
-using CuArrays, TimerOutputs
+using CUDA, TimerOutputs
 import ITensors: data, store
 import ITensors.NDTensors: data
 using Random, Logging, LinearAlgebra, DelimitedFiles

@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate("..")
 using PEPS, ITensorsGPU, ITensors
-using TimerOutputs, Random, Statistics, ArgParse, CUDAnative, Distributions, Logging, CuArrays
+using TimerOutputs, Random, Statistics, ArgParse, CUDAnative, Distributions, Logging, CUDA
 
 s = ArgParseSettings()
 @add_arg_table! s begin
@@ -87,7 +87,7 @@ J     = parsed_args["J"]
 sites = siteinds("S=1/2",Nx*Ny)
 
 # disallow scalar indexing on GPU, which is very slow 
-CuArrays.allowscalar(false)
+CUDA.allowscalar(false)
 A = checkerboardfPEPS(sites, Nx, Ny, mindim=D)
 # to the user, these appear as normal ITensors, but they have on-device storage
 # Julia can detect this at runtime and appropriately dispatch to CUTENSOR

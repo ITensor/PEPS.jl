@@ -42,7 +42,7 @@ end
 Base.eltype(A::fPEPS) = eltype(A.A_[1,1])
 
 function cudelt(left::Index, right::Index)
-    d_data   = CuArrays.zeros(Float64, ITensors.dim(left), ITensors.dim(right))
+    d_data   = CUDA.zeros(Float64, ITensors.dim(left), ITensors.dim(right))
     ddi = diagind(d_data, 0)
     d_data[ddi] = 1.0
     delt = cuITensor(vec(d_data), left, right)
@@ -164,9 +164,9 @@ Base.show(io::IO, o::Operator) = show(io, "Direction: $(o.dir)\nSites [row => co
 getDirectional(ops::Vector{Operator}, dir::Op_Type) = collect(filter(x->x.dir==dir, ops))
 
 function spinI(s::Index; is_gpu::Bool=false)::ITensor
-    I_data      = is_gpu ? CuArrays.zeros(Float64, ITensors.dim(s)*ITensors.dim(s)) : zeros(Float64, ITensors.dim(s), ITensors.dim(s))
+    I_data      = is_gpu ? CUDA.zeros(Float64, ITensors.dim(s)*ITensors.dim(s)) : zeros(Float64, ITensors.dim(s), ITensors.dim(s))
     idi         = diagind(reshape(I_data, ITensors.dim(s), ITensors.dim(s)), 0)
-    I_data[idi] = is_gpu ? CuArrays.ones(Float64, ITensors.dim(s)) : ones(Float64, ITensors.dim(s))
+    I_data[idi] = is_gpu ? CUDA.ones(Float64, ITensors.dim(s)) : ones(Float64, ITensors.dim(s))
     I           = is_gpu ? cuITensor( I_data, IndexSet(s, s') ) : itensor(I_data, IndexSet(s, s'))
     return I
 end
@@ -1189,7 +1189,7 @@ function rightwardSweep(A::fPEPS,
             A = gaugeColumn(A, col, :right; kwargs...)
         end
         if col == 1
-            left_H_terms = getDirectional(H[1], Horizontal)
+            left_H_terms = getDirectional(vcat(H[:, 1]...), Horizontal)
             @timeit "left edge env" begin
                 Ls[col] = buildEdgeEnvironment(A, H, left_H_terms, :left, 1; kwargs...)
             end
@@ -1235,7 +1235,7 @@ function leftwardSweep(A::fPEPS,
             A = gaugeColumn(A, col, :left; kwargs...)
         end
         if col == Nx
-            right_H_terms = getDirectional(H[Nx - 1], Horizontal)
+            right_H_terms  = getDirectional(vcat(H[:, Nx - 1]...), Horizontal)
             @timeit "right edge env" begin
                 Rs[col] = buildEdgeEnvironment(A, H, right_H_terms, :right, Nx; kwargs...)
             end
