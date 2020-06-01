@@ -1772,6 +1772,8 @@ function sweepColumn(A::fPEPS,
         R_s = buildRs(A, H; kwargs...)
         EAncEnvs = buildAncs(A, L_s[col - 1], R_s[col + 1], H, col)
         N, E = measureEnergy(A, L_s[col - 1], R_s[col + 1], EAncEnvs, H, 1, col)
+        println("Energy at MID: ", E/(Nx*Ny))
+        println("Nx: ", Nx)
     end
     @debug "Beginning buildAncs for col $col"
     AncEnvs = buildAncs(A, L, R, H, col)
