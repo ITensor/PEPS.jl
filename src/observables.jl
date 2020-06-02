@@ -11,7 +11,7 @@ function measureXmag(A::fPEPS,
     Ny, Nx = size(A)
     is_cu  = is_gpu(A)
     dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
-    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
+    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny), fill(ITensor(), 1, Ny))
     measuredX = zeros(Ny)
     op = is_cu ? cuITensor(X) : X
     Xs = [Operator([row=>col], [op], s, Field) for row in 1:Ny]
@@ -40,7 +40,7 @@ function measureZmag(A::fPEPS,
     Nx, Ny = size(A)
     is_cu  = is_gpu(A)
     dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
-    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
+    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny), fill(ITensor(), 1, Ny))
     measuredZ = zeros(Ny)
     op = is_cu ? cuITensor(Z) : Z 
     Zs = [Operator([row=>col], [op], s, Field) for row in 1:Ny]
@@ -73,7 +73,7 @@ function measureSmagVertical(A::fPEPS,
     Nx, Ny     = size(A)
     is_cu  = is_gpu(A)
     dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
-    dummyEnv   = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
+    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny), fill(ITensor(), 1, Ny))
     measuredSV = zeros(Ny)
     is_cu     = is_gpu(A) 
     Z = is_cu ? cuITensor(Z) : Z
@@ -92,13 +92,13 @@ function measureSmagVertical(A::fPEPS,
     vTs = verticalTerms(A, tL, tR, (above=AI,), (above=AV,), SVs, 1, col, A[1, col])
     N   = buildN(A, tL, tR, (above=AI,), 1, col, A[1, col])
     nrm = scalar(N * dag(A[1, col]'))
-    println( "--- vertical TERMS col $col ---")
+    #=println( "--- vertical TERMS col $col ---")
     for (vi, vT) in enumerate(vTs)
         row = SVs[vi].sites[1][1]
         println(SVs[vi])
         println(scalar(vT * dag(A[1, col]'))/nrm)
         measuredSV[row] += scalar(vT * dag(A[1, col]'))/nrm
-    end
+    end=#
     return measuredSV
 end
 
@@ -122,7 +122,7 @@ function measureSmagHorizontal(A::fPEPS,
     Nx, Ny = size(A)
     is_cu  = is_gpu(A)
     dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
-    dummyEnv   = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny))
+    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny), fill(ITensor(), 1, Ny))
     measuredSH = zeros(Ny)
     SHs = Operator[]
     for row in 1:Ny
@@ -137,13 +137,13 @@ function measureSmagHorizontal(A::fPEPS,
     hTs = connectRightTerms(A, tL, tR, (above=AI,), (above=AS,), SHs, 1, col, A[1, col])
     N  = buildN(A, tL, tR, (above=AI,), 1, col, A[1, col])
     nrm = scalar(N * dag(A[1, col]'))
-    println( "--- horizontal TERMS col $col ---")
+    #=println( "--- horizontal TERMS col $col ---")
     for (hi, hT) in enumerate(hTs)
         row = SHs[hi].sites[1][1]
         println(SHs[hi])
         println(scalar(hT * dag(A[1, col]'))/nrm)
         measuredSH[row] += scalar(hT * dag(A[1, col]'))/nrm
-    end
+    end=#
     return measuredSH
 end
 
@@ -219,8 +219,9 @@ function measure_correlators_ising(A::fPEPS, H, sweep::Int; kwargs...)
     prefix::String  = get(kwargs, :prefix, "")
     max_gauge_iter::Int = get(kwargs, :max_gauge_iter, 50)
     if iseven(sweep)
+        R_s = Vector{PEPS.Environments}(undef, Nx)
         L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
-        R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        #R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
         for col in reverse(1:Nx)
             A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
             x_mag[:, col] = measureXmag(A, L_s, R_s, col; mindim=mindim, maxdim=maxdim)
@@ -230,13 +231,14 @@ function measure_correlators_ising(A::fPEPS, H, sweep::Int; kwargs...)
                 if col < Nx
                     R_s[col] = buildNextEnvironment(A, R_s[col+1], H, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                 else
-                    right_H_terms = getDirectional(H[Nx-1], Horizontal)
+                    right_H_terms = getDirectional(vcat(H[:, Nx-1]), Horizontal)
                     R_s[col] = buildEdgeEnvironment(A, H, right_H_terms, :right, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                 end
             end
         end
     else
-        L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        #L_s = buildLs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
+        L_s = Vector{PEPS.Environments}(undef, Nx)
         R_s = buildRs(A, H; mindim=mindim, maxdim=maxdim, env_maxdim=env_maxdim)
         for col in 1:Nx
             A  = intraColumnGauge(A, col; mindim=mindim, maxdim=maxdim)
@@ -247,7 +249,7 @@ function measure_correlators_ising(A::fPEPS, H, sweep::Int; kwargs...)
                 if col > 1
                     L_s[col] = buildNextEnvironment(A, L_s[col-1], H, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                 else
-                    left_H_terms = getDirectional(H[1], Horizontal)
+                    left_H_terms = getDirectional(vcat(H[:, 1]), Horizontal)
                     L_s[col] = buildEdgeEnvironment(A, H, left_H_terms, :left, col; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
                 end
             end
