@@ -559,7 +559,6 @@ function verticalTerms(A::fPEPS,
     return vTerms
 end
 
-<<<<<<< HEAD
 function diagonalTerms(A::fPEPS,
                        L::Environments,
                        R::Environments,
@@ -657,7 +656,8 @@ function diagonalTerms(A::fPEPS,
         end
     end
     return dTerms
-=======
+end
+
 function verticalTermsTwoSite(A::fPEPS, 
                               L::Environments, 
                               R::Environments, 
@@ -1909,15 +1909,16 @@ function doSweeps(A::fPEPS,
                   prefix="mag", 
                   max_gauge_iter::Int=10,
                   model::Symbol=:XXZ,
-                  two_site::Bool=false)
+                  two_site::Bool=false,
+                  rotation::Bool=false)
     Ny, Nx = size(A) 
     for sweep in sweep_start:sweep_count
-        CuArrays.memory_status()
+        overlap_cutoff = 0.999
         if iseven(sweep)
-            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter, two_site=two_site)
+            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed rightwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=overlap_cutoff, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter, two_site=two_site)
             println("SWEEP RIGHT $sweep, time $this_time")
         else
-            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed leftwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=0.999, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter, two_site=two_site)
+            (A, Ls, Rs), this_time, bytes, gctime, memallocs = @timed leftwardSweep(A, Ls, Rs, H; sweep=sweep, mindim=mindim, maxdim=maxdim, simple_update_cutoff=simple_update_cutoff, overlap_cutoff=overlap_cutoff, cutoff=cutoff, env_maxdim=env_maxdim, max_gauge_iter=max_gauge_iter, two_site=two_site)
             println("SWEEP LEFT $sweep, time $this_time")
         end
         flush(stdout)
@@ -1934,8 +1935,13 @@ function doSweeps(A::fPEPS,
         elseif do_mag && model == :Ising
             measure_correlators_ising(copy(A), H, Ls, Rs, sweep; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim, prefix=prefix)
         end
-        CuArrays.memory_status()
-        println("---- done sweep $sweep ----")
+        if rotation && mod(sweep, 10) == 0
+            new_A = copy(A)
+            for row in 1:Ny, col in 1:Nx
+                new_A[col, row] = A[row, col]
+            end
+            Ls = buildLs(A, H; mindim=maxdim, maxdim=maxdim, cutoff=cutoff, env_maxdim=env_maxdim)
+        end
     end
     return A
 end
