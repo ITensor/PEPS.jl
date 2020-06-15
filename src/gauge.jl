@@ -54,10 +54,13 @@ function buildEnvs(A::fPEPS, Q::MPO, next_col_inds, QR_inds, col)
         Ap = setprime(Ap, 0, next_col_inds[row]')
         Qp = dag(deepcopy(Q[row]))'
         Qp = setprime(Qp, 0, QR_inds[row]')
+        @show inds(A[row, col])
+        @show inds(Ap)
+        @show inds(Qp)
         thisTerm[row]  = A[row, col] * Ap * Qp
         thisfTerm[row] = thisTerm[row] * Q[row]
     end
-    Envs = thisTerm
+    #=Envs = thisfTerm
     fF   = cumprod(thisfTerm)
     rF   = reverse(cumprod(reverse(thisfTerm)))
     for row in 1:Ny
@@ -68,7 +71,9 @@ function buildEnvs(A::fPEPS, Q::MPO, next_col_inds, QR_inds, col)
             Envs[row] *= rF[row + 1]
         end
     end
-
+    =#
+    Envs = cumprod(thisfTerm)
+    Envs[end] = Envs[end-1]*thisTerm[end]
     return Envs
 end
 
@@ -96,7 +101,9 @@ function orthogonalize_Q!(Envs, Q, A, QR_inds, next_col_inds, dummy_nexts, col, 
     Ny    = length(Q)
     Ampo  = MPO(Ny)
     cmb_l = Vector{ITensor}(undef, Ny)
-    for row in 1:Ny
+    println()
+    println()
+    for row in reverse(1:Ny)
         if row < Ny
             Q_ = my_polar(Envs[row], QR_inds[row], commonind(Q[row], Q[row+1]); kwargs...)
             Q[row] = deepcopy(noprime(Q_))
@@ -104,6 +111,26 @@ function orthogonalize_Q!(Envs, Q, A, QR_inds, next_col_inds, dummy_nexts, col, 
             Q_ = my_polar(Envs[row], QR_inds[row]; kwargs...)
             Q[row] = deepcopy(noprime(Q_))
         end
+        Ap = dag(deepcopy(A[row, col]))'
+        Ap = setprime(Ap, 0, next_col_inds[row]')
+        Qp = dag(deepcopy(Q[row]))'
+        Qp = setprime(Qp, 0, QR_inds[row]')
+        @show inds(A[row, col])
+        @show inds(Ap)
+        @show inds(Qp)
+        thisTerm = A[row, col] * Ap * Qp
+        thisTerm *= Q[row]
+        if row > 1
+            EA = row < Ny ? Envs[row+1] : cuITensor(1.0)
+            EB = row > 2  ? Envs[row-2] : cuITensor(1.0)
+            Envs[row-1] = EA*thisTerm 
+            Ap = dag(deepcopy(A[row-1, col]))'
+            Ap = setprime(Ap, 0, next_col_inds[row-1]')
+            Qp = dag(deepcopy(Q[row-1]))'
+            Qp = setprime(Qp, 0, QR_inds[row-1]')
+            thisTerm = A[row, col] * Ap * Qp
+            Envs[row-1] *= thisTerm*EB 
+        end 
         AQinds     = IndexSet(firstind(A[row, col], "Site")) 
         if two_sided
             AQinds = IndexSet(AQinds..., commonind(inds(A[row, col], "Link"), inds(Q[row], "Link"))) # prev_col_ind
@@ -128,13 +155,28 @@ function orthogonalize_QHorizontal!(Envs, Q, A, Af, QR_inds, next_col_inds, dumm
             Q_ = my_polar(Envs[row], QR_inds[row]; kwargs...)
             Q[row] = deepcopy(noprime(Q_))
         end
+        Ap = dag(deepcopy(A[row, col]))'
+        Ap = setprime(Ap, 0, next_col_inds[row]')
+        Qp = dag(deepcopy(Q[row]))'
+        Qp = setprime(Qp, 0, QR_inds[row]')
+        thisTerm = A[row, col] * Ap * Qp * Q[row]
+        if row > 1
+            EA = row < Nx ? Envs[row+1] : cuITensor(1.0)
+            EB = row > 2  ? Envs[row-2] : cuITensor(1.0)
+            Envs[row-1] = EA*thisTerm 
+            Ap = dag(deepcopy(A[row-1, col]))'
+            Ap = setprime(Ap, 0, next_col_inds[row-1]')
+            Qp = dag(deepcopy(Q[row-1]))'
+            Qp = setprime(Qp, 0, QR_inds[row-1]')
+            thisTerm = A[row, col] * Ap * Qp
+            Envs[row-1] *= thisTerm*EB 
+        end 
         AQinds     = IndexSet(firstind(A[row], "Site,c$col")) 
         if two_sided
             AQinds = IndexSet(AQinds..., commonind(inds(A[row], "Link"), inds(Q[row], "Link"))) # prev_col_ind
         end
         cmb_l[row] = combiner(AQinds, tags="Site,AQ,r$row")
         Ampo[row]  = A[row] * cmb_l[row]
-        #Ampo[row]  = replaceind!(Ampo[row], anci, dummy_nexts[row])
         Ampo[row] *= dummy_nexts[row] 
         Q[row]    *= cmb_l[row]
     end
@@ -206,7 +248,7 @@ function gaugeQR(A::fPEPS, col::Int, side::Symbol; kwargs...)
             end
         end
     end
-    println( "best overlap: ", best_overlap, "\nratio_history: $ratio_history")
+    println( "\tbest overlap: ", best_overlap)#, "\nratio_history: $ratio_history")
     return best_Q, best_R, next_col_inds, QR_inds, dummy_nexts
 end
 
@@ -218,7 +260,11 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
     prev_col_inds = Vector{Index}(undef, Ny)
     next_col = side == :left ? col - 1 : col + 1
     prev_col = side == :left ? col + 1 : col - 1
-    Q, QR_inds, next_col_inds = initQs(A, col, ncol; kwargs...)
+    #Q, QR_inds, next_col_inds = initQs(A, col, ncol; kwargs...)
+    old_Q, old_R, old_ncis, old_QRinds, old_dns = gaugeQR(A, col, side; kwargs...)
+    Q = old_Q 
+    QR_inds = old_QRinds
+    next_col_inds = old_ncis
     left_edge     = col == 1
     right_edge    = col == Nx
     ratio_history = Vector{Float64}()
@@ -240,6 +286,8 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
         dummy_nexts[row] = combiner(cis, tags="DM,Site,r$row")
     end
     iter          = 0
+    downward      = 0
+    below         = 0
     while best_overlap < overlap_cutoff
         @timeit "build envs" begin
             Envs = buildEnvs(A, Q, next_col_inds, QR_inds, col)
@@ -258,6 +306,18 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
             Q[row]      *= cmb_l[row]
         end
         push!(ratio_history, ratio)
+        if iter > 1
+            if ratio < ratio_history[end-1]
+                downward += 1
+            else
+                downward = 0
+            end
+            if ratio < 0.5
+                below += 1
+            else
+                below = 0
+            end
+        end
         if ratio > best_overlap || iter == 0
             best_Q = deepcopy(Q)
             best_R = deepcopy(R)
@@ -266,7 +326,8 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
         ratio > overlap_cutoff && break
         iter += 1
         iter > max_gauge_iter && break
-        if (iter > 10 && best_overlap < 0.5) || (iter > 20 && mod(iter, 40) == 0)
+        #if (iter > 10 && best_overlap < 0.5) || (iter > 20 && mod(iter, 40) == 0)
+        if downward > 20 || below > 20
             Q_, QR_inds_, next_col_inds_ = initQs(A, col, next_col; kwargs...)
             for row in 1:Ny
                 if row < Ny
@@ -285,10 +346,14 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
                 Q[row] /= sqrt(norm(Q[row])) 
             end
             push!(ratio_history, -1000.0)
+            downward = 0
+            below = 0
         end
     end
     println( "best overlap: ", best_overlap)
     println( "ratio_history: $ratio_history")
+    println()
+    println()
     return best_Q, best_R, next_col_inds, QR_inds, dummy_nexts
 end
 
