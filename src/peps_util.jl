@@ -359,8 +359,8 @@ function buildHIedgeTwoSiteHorizontal(Aj::Vector{ITensor},
     IH *= op
     IH *= IH_a
     AAinds = inds(prime(ϕ))
-    @assert hasinds(inds(IH), AAinds)
-    @assert hasinds(AAinds, inds(IH))
+    @assert hasinds(inds(IH), AAinds) "inds(IH): $(inds(IH)),\n inds(AA): $AAinds"
+    @assert hasinds(AAinds, inds(IH)) "inds(IH): $(inds(IH)),\n inds(AA): $AAinds"
     return (IH,)
 end
 
@@ -1725,6 +1725,10 @@ function buildLocalH(A::fPEPS,
         N   = buildN(A, L, R, AncEnvs[:I], row, col, ϕ)
     end
     den = scalar(collect(N * dag(ϕ)'))
+    if verbose
+        println("--- NORM ---")
+        println(den)
+    end
     local left_H_terms, right_H_terms, diag_left_H_terms, diag_right_H_terms
     if col > 1
         left_H_terms = getDirectional(vcat(H[:, col - 1]...), Horizontal)
@@ -1962,6 +1966,10 @@ function buildLocalHTwoSiteHorizontal(A::Vector{ITensor},
         N   = buildNTwoSiteHorizontal(A, L, R, AncEnvs[:I], row, col, ncol, ϕ)
     end
     den = scalar(collect(N * dag(ϕ)'))
+    if verbose
+        println("--- NORM ---")
+        println(den)
+    end
     local left_H_terms, right_H_terms
     mincol, maxcol    = extrema([col, ncol])
     interior_H_terms  = getDirectional(vcat(H[:, mincol]...), Horizontal)
@@ -1974,14 +1982,14 @@ function buildLocalHTwoSiteHorizontal(A::Vector{ITensor},
         right_H_terms = getDirectional(vcat(H[:, maxcol]...), Horizontal)
         term_count   += length(right_H_terms)
     end
-    if 1 < col < Nx
+    if 1 < col < Nx && 1 < ncol < Nx
         term_count += 1
     end
     Hs = Vector{ITensor}(undef, term_count)
     term_counter = 1
     @debug "\t\tBuilding I*H and H*I row $row col $col"
     @timeit "build HIs" begin
-        edge = 1 < col < Nx ? :none : (col == 1 ? :left : :right) 
+        edge = (1 < col < Nx && 1 < ncol < Nx) ? :none : ((col == 1 || ncol == 1) ? :left : :right) 
         HIs = buildHIsTwoSiteHorizontal(A, L, R, row, col, ncol, ϕ; edge=edge)
         Hs[term_counter] = HIs[1]
         if length(HIs) == 2
@@ -1991,7 +1999,7 @@ function buildLocalHTwoSiteHorizontal(A::Vector{ITensor},
         if verbose
             println("--- HI TERMS ---")
             for HI in HIs
-                println(scalar(HI * dag(ϕ)'))
+                println(scalar(HI * dag(ϕ)')/den)
             end
         end
     end
@@ -2003,7 +2011,7 @@ function buildLocalHTwoSiteHorizontal(A::Vector{ITensor},
         if verbose
             println( "--- vT TERMS ---")
             for vT in vTs
-                println(scalar(vT * dag(ϕ)'))
+                println(scalar(vT * dag(ϕ)')/den)
             end
         end
     end
@@ -2015,7 +2023,7 @@ function buildLocalHTwoSiteHorizontal(A::Vector{ITensor},
         if verbose
             println( "--- fT TERMS ---")
             for fT in fTs
-                println(scalar(fT * dag(ϕ)'))
+                println(scalar(fT * dag(ϕ)')/den)
             end
         end
     end
@@ -2027,7 +2035,7 @@ function buildLocalHTwoSiteHorizontal(A::Vector{ITensor},
         if verbose
             println( "--- interiorT TERMS ---")
             for iT in iTs
-                println(scalar(iT * dag(ϕ)'))
+                println(scalar(iT * dag(ϕ)')/den)
             end
         end
     end
@@ -2040,7 +2048,7 @@ function buildLocalHTwoSiteHorizontal(A::Vector{ITensor},
             if verbose
                 println( "--- lT TERMS ---")
                 for lT in lTs
-                    println(scalar(lT * dag(ϕ)'))
+                    println(scalar(lT * dag(ϕ)')/den)
                 end
             end
         end
@@ -2055,7 +2063,7 @@ function buildLocalHTwoSiteHorizontal(A::Vector{ITensor},
             if verbose
                 println( "--- rT TERMS ---")
                 for rT in rTs
-                    println(scalar(rT * dag(ϕ)'))
+                    println(scalar(rT * dag(ϕ)')/den)
                 end
             end
         end
@@ -2105,12 +2113,12 @@ function intraColumnGaugeHorizontal(A::Vector{ITensor}; kwargs...)::Vector{ITens
         end
         old_ci    = commonind(A[row], A[row-1])
         Ac        = A[row]*cmb
-        U, S, V   = svd(Ac, Lis; mindim=dim(old_ci), maxdim=dim(old_ci))
+        U, S, V   = svd(Ac, Lis; mindim=dim(old_ci), maxdim=dim(old_ci), cutoff=0.0, utags=tags(old_ci))
         A[row]    = U*cmb
         A[row-1] *= (S*V)
-        new_ci    = commonind(A[row], A[row-1])
-        A[row]    = replaceind!(A[row], new_ci, old_ci)
-        A[row-1]  = replaceind!(A[row-1], new_ci, old_ci)
+        #new_ci    = commonind(A[row], A[row-1])
+        #A[row]    = replaceind!(A[row], new_ci, old_ci)
+        #A[row-1]  = replaceind!(A[row-1], new_ci, old_ci)
     end
     return A
 end
@@ -2475,6 +2483,7 @@ function optimizeLocalH(A::fPEPS,
     N        = buildN(A, L, R, AncEnvs[:I], row, col, new_A)
     new_N    = real(scalar(collect(N * dag(new_A)')))
     @info "Optimized energy at row $row col $col : $(new_E/(new_N*Nx*Ny)) and norm : $new_N"
+    #println("Optimized energy at row $row col $col : $(new_E/(new_N*Nx*Ny)) and norm : $new_N")
     @timeit "restore intraColumnGauge" begin
         if row < Ny
             @debug "\tRestoring intraColumnGauge for col $col row $row"
@@ -2537,13 +2546,15 @@ function optimizeLocalHTwoSiteHorizontal(A::Vector{ITensor},
     end
     initial_E = real(scalar(collect(deepcopy(localH) * dag(A[row])')))
     @info "Initial energy at row $row col $col : $(initial_E/(initial_N*Nx*Ny)) and norm : $initial_N"
+    #println("Initial energy at row $row col $col : $(initial_E/(initial_N*Nx*Ny)) and norm : $initial_N")
     @debug "\tBeginning davidson for col $col row $row"
     mapper   = ITensorMapTwoSiteHorizontal(A, H, L, R, AncEnvs, row, col, ncol)
-    λ, new_A = davidson(mapper, A[row]; maxiter=1, kwargs...)
-    new_E    = λ #real(scalar(collect(new_A * localH * dag(new_A)')))
+    λ, new_A = davidson(mapper, A[row]; maxiter=2, kwargs...)
+    new_E    = λ
     N        = buildNTwoSiteHorizontal(A, L, R, AncEnvs[:I], row, col, ncol, new_A)
     new_N    = real(scalar(collect(N * dag(new_A)')))
     @info "Optimized energy at row $row col $col : $(new_E/(new_N*Nx*Ny)) and norm : $new_N"
+    #println("Optimized energy at row $row col $col : $(new_E/(new_N*Nx*Ny)) and norm : $new_N")
     @timeit "restore intraColumnGauge" begin
         if row < Ny
             @debug "\tRestoring intraColumnGauge for col $col row $row"
@@ -2551,26 +2562,26 @@ function optimizeLocalHTwoSiteHorizontal(A::Vector{ITensor},
             cmb_is  = IndexSet(cmb_is..., inds(A[row], "Link,r")...)
             cmb     = combiner(cmb_is, tags="CMB")
             ci      = combinedind(cmb)
-            Lis     = IndexSet(ci) #cmb_is 
+            Lis     = IndexSet(ci)
             if row > 1
                 Lis = IndexSet(Lis..., commonind(A[row], A[row - 1]))
             end
             old_ci  = commonind(A[row], A[row+1])
             svdA    = new_A*cmb
-            Ris     = uniqueinds(inds(svdA), Lis) 
-            U, S, V = svd(svdA, Ris; mindim=dim(old_ci), maxdim=dim(old_ci))
+            Ris     = uniqueinds(inds(svdA), Lis)
+            U, S, V = svd(svdA, Ris; mindim=dim(old_ci), maxdim=dim(old_ci), vtags=tags(old_ci))
             new_ci  = commonind(V, S)
-            replaceind!(V, new_ci, old_ci)
-            A[row]   = V*cmb 
-            newU = S*U*A[row+1]
-            replaceind!(newU, new_ci, old_ci)
+            #replaceind!(V, new_ci, old_ci)
+            A[row]  = V*cmb
+            newU    = S*U*A[row+1]
+            #replaceind!(newU, new_ci, old_ci)
             A[row+1] = newU
             if row < Ny - 1
                 nI    = is_cu ? cuITensor(1.0) : ITensor(1.0)
                 for si in inds(A[row+1], "Site")
                     nI    *= spinI(si; is_gpu=is_cu)
                 end
-                newAA = AncEnvs[:I][:above][end - row - 1]
+                newAA  = AncEnvs[:I][:above][end - row - 1]
                 newAA *= L.I[row+1]
                 newAA *= A[row+1] * nI
                 newAA *= R.I[row+1]
@@ -2695,6 +2706,27 @@ function joincols(A::fPEPS, col::Int, ncol::Int)::Tuple{Vector{ITensor}, Vector{
     return Aj, cis
 end
 
+function unjoincols(A::fPEPS, Aj::Vector{ITensor}, cis::Vector{ITensor}, col::Int, ncol::Int)::fPEPS
+    Ny, Nx = size(A)
+    for row in 1:Ny
+        if row > 1
+            Aj[row] *= cis[row-1]
+        end
+        if row < Ny
+            Aj[row] *= cis[row]
+        end
+    end
+    for row in 1:Ny
+        col_is       = commoninds(Aj[row], A[row, col])
+        cnc_ci       = commonind(A[row, col], A[row, ncol])
+        U, S, V      = svd(Aj[row], col_is; mindim=dim(cnc_ci), maxdim=dim(cnc_ci), lefttags=tags(cnc_ci), cutoff=0.)
+        A[row, col]  = U
+        A[row, ncol] = S*V
+    end
+    D = dim(commonind(A[1, col], A[1, ncol]))
+    return A
+end
+
 function sweepColumn(A::fPEPS, 
                      L::Environments, R::Environments, 
                      H, 
@@ -2742,27 +2774,38 @@ function sweepColumn(A::fPEPS,
 end
 
 function sweepColumnHorizontal(A::fPEPS, 
-                              L::Environments, R::Environments, 
-                              H, col::Int, ncol::Int; 
-                              kwargs...)
+                               L::Environments, R::Environments, 
+                               H, col::Int, ncol::Int; 
+                               kwargs...)
     Ny, Nx = size(A)
-    if col == div(Nx,2)
-        @timeit "intraColumnGauge" begin
-            A = intraColumnGauge(A, col; kwargs...)
-        end
-        L_s = buildLs(A, H; kwargs...)
-        R_s = buildRs(A, H; kwargs...)
+    #println("Sweeping column $col with next column $ncol")
+    is_cu  = is_gpu(A)
+    dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
+    dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny), fill(ITensor(), 1, Ny)) 
+    #=@timeit "intraColumnGauge" begin
+        A = intraColumnGauge(A, col; kwargs...)
+    end
+    L_s = buildLs(A, H; kwargs...)
+    R_s = buildRs(A, H; kwargs...)
+    if 1 < col < Nx
         EAncEnvs = buildAncs(A, L_s[col - 1], R_s[col + 1], H, col)
         N, E = measureEnergy(A, L_s[col - 1], R_s[col + 1], EAncEnvs, H, 1, col)
-        println("Energy at MID: ", E/(Nx*Ny))
-        println("Nx: ", Nx)
-    end
+        println("Energy at col $col: ", E/(Nx*Ny), " and norm: ", N)
+    elseif col == 1
+        EAncEnvs = buildAncs(A, dummyEnv, R_s[col + 1], H, col)
+        N, E = measureEnergy(A, dummyEnv, R_s[col + 1], EAncEnvs, H, 1, col)
+        println("Energy at col $col: ", E/(Nx*Ny), " and norm: ", N)
+    elseif col == Nx
+        EAncEnvs = buildAncs(A, L_s[col - 1], dummyEnv, H, col)
+        N, E = measureEnergy(A, L_s[col - 1], dummyEnv, EAncEnvs, H, 1, col)
+        println("Energy at col $col: ", E/(Nx*Ny), " and norm: ", N)
+    end=#
     @debug "Beginning buildAncs for col $col"
     Aj, jis = joincols(A, col, ncol)
-    AncEnvs = buildAncsHorizontal(A, Aj, L, R, H, col, ncol)
     @timeit "intraColumnGauge Aj" begin
         Aj = intraColumnGaugeHorizontal(Aj; kwargs...)
     end
+    AncEnvs = buildAncsHorizontal(A, Aj, L, R, H, col, ncol)
     @inbounds for row in 1:Ny
         if row > 1
             @timeit "updateAncs" begin
@@ -2772,6 +2815,8 @@ function sweepColumnHorizontal(A::fPEPS,
         @debug "Beginning optimizing H for col $col"
         Aj, AncEnvs = optimizeLocalHTwoSiteHorizontal(Aj, L, R, AncEnvs, H, row, col, ncol; kwargs...)
     end
+    #A = unjoincols(A, Aj, jis, col, ncol)
+    #return A
     return A, Aj
 end
 
@@ -2793,13 +2838,19 @@ function rightwardSweep(A::fPEPS,
     leftmost  = sweep_width == Nx ? 1 : midpoint - div(sweep_width, 2)
     ts_hori::Bool = get(kwargs, :two_site_hori, false)
     if ts_hori
-        @inbounds for col in leftmost:rightmost-1
+        @inbounds for col in leftmost:rightmost
             next_col = col + 1
             L = col == 1 ? dummyEnv : Ls[col - 1]
             @debug "Sweeping col $col"
             if sweep >= simple_update_cutoff
                 @timeit "sweep" begin
-                    A, Aj = sweepColumnHorizontal(A, L, Rs[col+2], H, col, next_col; kwargs...)
+                    if next_col == Nx
+                        #A = sweepColumnHorizontal(A, L, dummyEnv, H, col, next_col; kwargs...)
+                        A, Aj = sweepColumnHorizontal(A, L, dummyEnv, H, col, next_col; kwargs...)
+                    else
+                        #A = sweepColumnHorizontal(A, L, Rs[col+2], H, col, next_col; kwargs...)
+                        A, Aj = sweepColumnHorizontal(A, L, Rs[col+2], H, col, next_col; kwargs...)
+                    end
                 end
             end
             if sweep < simple_update_cutoff
@@ -2808,6 +2859,7 @@ function rightwardSweep(A::fPEPS,
             end
             if sweep >= simple_update_cutoff
                 # Gauge
+                #A = gaugeColumn(A, col, :right; kwargs...)
                 A = gaugeColumnHorizontal(A, Aj, col, next_col, :right; kwargs...)
             end
             if col == 1
@@ -2821,6 +2873,15 @@ function rightwardSweep(A::fPEPS,
                 end
             end
         end
+        Ls[Nx-1] = buildNextEnvironment(A, Ls[Nx-2], H, :left, Nx-1; kwargs...)
+        @timeit "intraColumnGauge" begin
+            A = intraColumnGauge(A, Nx; kwargs...)
+        end
+        EAncEnvs = buildAncs(A, Ls[Nx - 1], dummyEnv, H, Nx)
+        N, E = measureEnergy(A, Ls[Nx - 1], dummyEnv, EAncEnvs, H, 1, Nx)
+        println("Energy at Nx: ", E/(Nx*Ny), " and norm: ", N)
+        println()
+        println()
     else
         @inbounds for col in leftmost:rightmost
             L = col == 1 ? dummyEnv : Ls[col - 1]
@@ -2871,13 +2932,19 @@ function leftwardSweep(A::fPEPS,
     leftmost  = sweep_width == Nx ? 2 : midpoint - div(sweep_width, 2)
     ts_hori::Bool = get(kwargs, :two_site_hori, false)
     if ts_hori
-        @inbounds for col in reverse(leftmost+1:rightmost)
+        @inbounds for col in reverse(leftmost:rightmost)
             next_col = col - 1
             R = col == Nx ? dummyEnv : Rs[col + 1]
             @debug "Sweeping col $col and next col $(col - 1)"
             if sweep >= simple_update_cutoff
                 @timeit "sweep" begin
-                    A, Aj = sweepColumnHorizontal(A, Ls[col - 2], R, H, col, next_col; kwargs...)
+                    if next_col > 1
+                        A, Aj = sweepColumnHorizontal(A, Ls[col - 2], R, H, col, next_col; kwargs...)
+                        #A = sweepColumnHorizontal(A, Ls[col - 2], R, H, col, next_col; kwargs...)
+                    else
+                        A, Aj = sweepColumnHorizontal(A, dummyEnv, R, H, col, next_col; kwargs...)
+                        #A = sweepColumnHorizontal(A, dummyEnv, R, H, col, next_col; kwargs...)
+                    end
                 end
             end
             if sweep < simple_update_cutoff
@@ -2887,6 +2954,7 @@ function leftwardSweep(A::fPEPS,
             if sweep >= simple_update_cutoff
                 # Gauge
                 A = gaugeColumnHorizontal(A, Aj, col, next_col, :left; kwargs...)
+                #A = gaugeColumn(A, col, :left; kwargs...)
             end
             if col == Nx
                 right_H_terms  = getDirectional(vcat(H[:, Nx - 1]...), Horizontal)
@@ -2899,6 +2967,15 @@ function leftwardSweep(A::fPEPS,
                 end
             end
         end
+        Rs[2] = buildNextEnvironment(A, Rs[3], H, :right, 2; kwargs...)
+        @timeit "intraColumnGauge" begin
+            A = intraColumnGauge(A, 1; kwargs...)
+        end
+        EAncEnvs = buildAncs(A, dummyEnv, Rs[2], H, 1)
+        N, E = measureEnergy(A, dummyEnv, Rs[2], EAncEnvs, H, 1, 1)
+        println("Energy at 1: ", E/(Nx*Ny), " and norm: ", N)
+        println()
+        println()
     else
         @inbounds for col in reverse(leftmost:rightmost)
             R = col == Nx ? dummyEnv : Rs[col + 1]
@@ -2944,7 +3021,7 @@ function doSweeps(A::fPEPS,
                   env_maxdim=2maxdim, 
                   do_mag::Bool=false, 
                   prefix="mag", 
-                  max_gauge_iter::Int=50,
+                  max_gauge_iter::Int=200,
                   model::Symbol=:XXZ,
                   two_site_vert::Bool=false,
                   two_site_hori::Bool=false,

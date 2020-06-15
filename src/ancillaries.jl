@@ -26,7 +26,8 @@ function makeAncillaryIsHorizontal(A::fPEPS, Aj::Vector{ITensor}, L::Environment
     ancIs          = Vector{ITensor}(undef, Ny)
     ancI           = copy(dummy)
     for row in reverse(1:Ny)
-        ancI      *= L.I[row] * Aj[row]
+        ancI      *= L.I[row]
+        ancI      *= Aj[row]
         ancI      *= ops[row] * dag(prime(Aj[row]))
         ancI      *= R.I[row]
         ancIs[row] = copy(ancI)

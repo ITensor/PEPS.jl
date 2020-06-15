@@ -144,9 +144,9 @@ end
 function gaugeQR(A::fPEPS, col::Int, side::Symbol; kwargs...)
     overlap_cutoff::Real = get(kwargs, :overlap_cutoff, 1e-4)
     max_gauge_iter::Int  = get(kwargs, :max_gauge_iter, 100)
-    Ny, Nx = size(A)
-    is_cu  = is_gpu(A)
+    Ny, Nx   = size(A)
     prev_col_inds = Vector{Index}(undef, Ny)
+    is_cu    = is_gpu(A)
     next_col = side == :left ? col - 1 : col + 1
     prev_col = side == :left ? col + 1 : col - 1
     Q, QR_inds, next_col_inds = initQs(A, col, next_col; kwargs...)
@@ -206,7 +206,7 @@ function gaugeQR(A::fPEPS, col::Int, side::Symbol; kwargs...)
             end
         end
     end
-    @info "best overlap: ", best_overlap
+    println( "best overlap: ", best_overlap, "\nratio_history: $ratio_history")
     return best_Q, best_R, next_col_inds, QR_inds, dummy_nexts
 end
 
@@ -229,12 +229,15 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
     iter          = 1
     dummy_nexts   = Vector{ITensor}(undef, Ny) #[Index(ITensors.dim(next_col_inds[row]), "DM,Site,r$row") for row in 1:Ny]
     for row in 1:Ny
+        cis = IndexSet(firstind(Aj[row], "Site,c$ncol"))
         if ncol > col && ncol <= Nx - 1
             anci = commonindex(A[row, ncol], A[row, ncol+1])
+            cis = IndexSet(cis..., anci)
         elseif ncol < col && ncol >= 2
             anci = commonindex(A[row, ncol], A[row, ncol-1])
+            cis = IndexSet(cis..., anci)
         end
-        dummy_nexts[row] = combiner(anci, firstind(Aj[row], "Site,c$ncol"), tags="DM,Site,r$row")
+        dummy_nexts[row] = combiner(cis, tags="DM,Site,r$row")
     end
     iter          = 0
     while best_overlap < overlap_cutoff
@@ -263,7 +266,7 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
         ratio > overlap_cutoff && break
         iter += 1
         iter > max_gauge_iter && break
-        if (iter > 10 && best_overlap < 0.5) || (iter > 20 && mod(iter, 20) == 0)
+        if (iter > 10 && best_overlap < 0.5) || (iter > 20 && mod(iter, 40) == 0)
             Q_, QR_inds_, next_col_inds_ = initQs(A, col, next_col; kwargs...)
             for row in 1:Ny
                 if row < Ny
@@ -281,9 +284,11 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
                 Q[row] += salt/salt_d
                 Q[row] /= sqrt(norm(Q[row])) 
             end
+            push!(ratio_history, -1000.0)
         end
     end
     println( "best overlap: ", best_overlap)
+    println( "ratio_history: $ratio_history")
     return best_Q, best_R, next_col_inds, QR_inds, dummy_nexts
 end
 
@@ -324,6 +329,14 @@ function gaugeColumn( A::fPEPS, col::Int, side::Symbol; kwargs...)
         end
         maxdim::Int  = get(kwargs, :maxdim, 1)
         result       = multMPO(R, next_col_As; kwargs...)
+        a_norm      = is_cu ? cuITensor(1.0) : ITensor(1.0)
+        q_norm      = is_cu ? cuITensor(1.0) : ITensor(1.0)
+        r_norm      = is_cu ? cuITensor(1.0) : ITensor(1.0)
+        for row in 1:Ny
+            a_norm      *= dag(result[row]) * result[row]
+            q_norm      *= dag(Q[row]) * Q[row]
+            r_norm      *= dag(R[row]) * R[row]
+        end
         true_QR_inds = [Index(ITensors.dim(QR_inds[row]), "Link,r,r$row" * (side == :left ? ",c$(col-1)" : ",c$col")) for row in 1:Ny]
         for row in 1:Ny
             A[row, col] = Q[row]
