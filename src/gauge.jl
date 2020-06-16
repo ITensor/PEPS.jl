@@ -54,13 +54,10 @@ function buildEnvs(A::fPEPS, Q::MPO, next_col_inds, QR_inds, col)
         Ap = setprime(Ap, 0, next_col_inds[row]')
         Qp = dag(deepcopy(Q[row]))'
         Qp = setprime(Qp, 0, QR_inds[row]')
-        @show inds(A[row, col])
-        @show inds(Ap)
-        @show inds(Qp)
         thisTerm[row]  = A[row, col] * Ap * Qp
         thisfTerm[row] = thisTerm[row] * Q[row]
     end
-    #=Envs = thisfTerm
+    Envs = thisTerm
     fF   = cumprod(thisfTerm)
     rF   = reverse(cumprod(reverse(thisfTerm)))
     for row in 1:Ny
@@ -71,9 +68,33 @@ function buildEnvs(A::fPEPS, Q::MPO, next_col_inds, QR_inds, col)
             Envs[row] *= rF[row + 1]
         end
     end
-    =#
-    Envs = cumprod(thisfTerm)
-    Envs[end] = Envs[end-1]*thisTerm[end]
+    return Envs
+end
+
+function buildEnvsHorizontal(A::Vector{ITensor}, Q::MPO, next_col_inds, QR_inds, col, ncol)
+    Ny = length(A)
+    thisTerm  = Vector{ITensor}(undef, Ny)
+    thisfTerm = Vector{ITensor}(undef, Ny)
+    for row in 1:Ny
+        Ap = dag(deepcopy(A[row]))'
+        Ap = setprime(Ap, 0, next_col_inds[row]')
+        Ap = setprime(Ap, 0, firstind(A[row], "Site,c$ncol,r$row")')
+        Qp = dag(deepcopy(Q[row]))'
+        Qp = setprime(Qp, 0, QR_inds[row]')
+        thisTerm[row]  = A[row] * Ap * Qp
+        thisfTerm[row] = thisTerm[row] * Q[row]
+    end
+    Envs = thisTerm
+    fF   = cumprod(thisfTerm)
+    rF   = reverse(cumprod(reverse(thisfTerm)))
+    for row in 1:Ny
+        if row > 1
+            Envs[row] *= fF[row - 1]
+        end
+        if row < Ny
+            Envs[row] *= rF[row + 1]
+        end
+    end
     return Envs
 end
 
@@ -101,8 +122,6 @@ function orthogonalize_Q!(Envs, Q, A, QR_inds, next_col_inds, dummy_nexts, col, 
     Ny    = length(Q)
     Ampo  = MPO(Ny)
     cmb_l = Vector{ITensor}(undef, Ny)
-    println()
-    println()
     for row in reverse(1:Ny)
         if row < Ny
             Q_ = my_polar(Envs[row], QR_inds[row], commonind(Q[row], Q[row+1]); kwargs...)
@@ -111,26 +130,6 @@ function orthogonalize_Q!(Envs, Q, A, QR_inds, next_col_inds, dummy_nexts, col, 
             Q_ = my_polar(Envs[row], QR_inds[row]; kwargs...)
             Q[row] = deepcopy(noprime(Q_))
         end
-        Ap = dag(deepcopy(A[row, col]))'
-        Ap = setprime(Ap, 0, next_col_inds[row]')
-        Qp = dag(deepcopy(Q[row]))'
-        Qp = setprime(Qp, 0, QR_inds[row]')
-        @show inds(A[row, col])
-        @show inds(Ap)
-        @show inds(Qp)
-        thisTerm = A[row, col] * Ap * Qp
-        thisTerm *= Q[row]
-        if row > 1
-            EA = row < Ny ? Envs[row+1] : cuITensor(1.0)
-            EB = row > 2  ? Envs[row-2] : cuITensor(1.0)
-            Envs[row-1] = EA*thisTerm 
-            Ap = dag(deepcopy(A[row-1, col]))'
-            Ap = setprime(Ap, 0, next_col_inds[row-1]')
-            Qp = dag(deepcopy(Q[row-1]))'
-            Qp = setprime(Qp, 0, QR_inds[row-1]')
-            thisTerm = A[row, col] * Ap * Qp
-            Envs[row-1] *= thisTerm*EB 
-        end 
         AQinds     = IndexSet(firstind(A[row, col], "Site")) 
         if two_sided
             AQinds = IndexSet(AQinds..., commonind(inds(A[row, col], "Link"), inds(Q[row], "Link"))) # prev_col_ind
@@ -155,22 +154,6 @@ function orthogonalize_QHorizontal!(Envs, Q, A, Af, QR_inds, next_col_inds, dumm
             Q_ = my_polar(Envs[row], QR_inds[row]; kwargs...)
             Q[row] = deepcopy(noprime(Q_))
         end
-        Ap = dag(deepcopy(A[row, col]))'
-        Ap = setprime(Ap, 0, next_col_inds[row]')
-        Qp = dag(deepcopy(Q[row]))'
-        Qp = setprime(Qp, 0, QR_inds[row]')
-        thisTerm = A[row, col] * Ap * Qp * Q[row]
-        if row > 1
-            EA = row < Nx ? Envs[row+1] : cuITensor(1.0)
-            EB = row > 2  ? Envs[row-2] : cuITensor(1.0)
-            Envs[row-1] = EA*thisTerm 
-            Ap = dag(deepcopy(A[row-1, col]))'
-            Ap = setprime(Ap, 0, next_col_inds[row-1]')
-            Qp = dag(deepcopy(Q[row-1]))'
-            Qp = setprime(Qp, 0, QR_inds[row-1]')
-            thisTerm = A[row, col] * Ap * Qp
-            Envs[row-1] *= thisTerm*EB 
-        end 
         AQinds     = IndexSet(firstind(A[row], "Site,c$col")) 
         if two_sided
             AQinds = IndexSet(AQinds..., commonind(inds(A[row], "Link"), inds(Q[row], "Link"))) # prev_col_ind
@@ -278,9 +261,11 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
         cis = IndexSet(firstind(Aj[row], "Site,c$ncol"))
         if ncol > col && ncol <= Nx - 1
             anci = commonindex(A[row, ncol], A[row, ncol+1])
+            next_col_inds[row] = anci
             cis = IndexSet(cis..., anci)
         elseif ncol < col && ncol >= 2
             anci = commonindex(A[row, ncol], A[row, ncol-1])
+            next_col_inds[row] = anci
             cis = IndexSet(cis..., anci)
         end
         dummy_nexts[row] = combiner(cis, tags="DM,Site,r$row")
@@ -290,7 +275,7 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
     below         = 0
     while best_overlap < overlap_cutoff
         @timeit "build envs" begin
-            Envs = buildEnvs(A, Q, next_col_inds, QR_inds, col)
+            Envs = buildEnvsHorizontal(Aj, Q, next_col_inds, QR_inds, col, ncol)
         end
         @timeit "polar decomp" begin
             two_sided      = (side == :left && !right_edge) || (side == :right && !left_edge)
@@ -351,8 +336,8 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
         end
     end
     println( "best overlap: ", best_overlap)
-    println( "ratio_history: $ratio_history")
-    println()
+    #println( "ratio_history: $ratio_history")
+    #println()
     println()
     return best_Q, best_R, next_col_inds, QR_inds, dummy_nexts
 end

@@ -2841,16 +2841,12 @@ function rightwardSweep(A::fPEPS,
         @inbounds for col in leftmost:rightmost
             next_col = col + 1
             L = col == 1 ? dummyEnv : Ls[col - 1]
+            R = next_col == Nx ? dummyEnv : Rs[col + 2]
             @debug "Sweeping col $col"
             if sweep >= simple_update_cutoff
                 @timeit "sweep" begin
-                    if next_col == Nx
-                        #A = sweepColumnHorizontal(A, L, dummyEnv, H, col, next_col; kwargs...)
-                        A, Aj = sweepColumnHorizontal(A, L, dummyEnv, H, col, next_col; kwargs...)
-                    else
-                        #A = sweepColumnHorizontal(A, L, Rs[col+2], H, col, next_col; kwargs...)
-                        A, Aj = sweepColumnHorizontal(A, L, Rs[col+2], H, col, next_col; kwargs...)
-                    end
+                    #A = sweepColumnHorizontal(A, L, R, H, col, next_col; kwargs...)
+                    A, Aj = sweepColumnHorizontal(A, L, R, H, col, next_col; kwargs...)
                 end
             end
             if sweep < simple_update_cutoff
@@ -2934,17 +2930,13 @@ function leftwardSweep(A::fPEPS,
     if ts_hori
         @inbounds for col in reverse(leftmost:rightmost)
             next_col = col - 1
-            R = col == Nx ? dummyEnv : Rs[col + 1]
+            R = col == Nx    ? dummyEnv    : Rs[col + 1]
+            L = next_col > 1 ? Ls[col - 2] : dummyEnv
             @debug "Sweeping col $col and next col $(col - 1)"
             if sweep >= simple_update_cutoff
                 @timeit "sweep" begin
-                    if next_col > 1
-                        A, Aj = sweepColumnHorizontal(A, Ls[col - 2], R, H, col, next_col; kwargs...)
-                        #A = sweepColumnHorizontal(A, Ls[col - 2], R, H, col, next_col; kwargs...)
-                    else
-                        A, Aj = sweepColumnHorizontal(A, dummyEnv, R, H, col, next_col; kwargs...)
-                        #A = sweepColumnHorizontal(A, dummyEnv, R, H, col, next_col; kwargs...)
-                    end
+                    A, Aj = sweepColumnHorizontal(A, L, R, H, col, next_col; kwargs...)
+                    #A = sweepColumnHorizontal(A, L, R, H, col, next_col; kwargs...)
                 end
             end
             if sweep < simple_update_cutoff
