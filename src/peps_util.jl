@@ -342,11 +342,11 @@ function buildHIedgeTwoSiteHorizontal(Aj::Vector{ITensor},
     IH_b   = is_cu ? cuITensor(1.0) : ITensor(1.0)
     IH     = is_cu ? cuITensor(1.0) : ITensor(1.0)
     @inbounds for work_row in 1:row-1
-        IH_b *= E.H[work_row] * Aj[work_row]
+        IH_b *= Aj[work_row] * E.H[work_row]
         IH_b *= dag(prime(Aj[work_row], "Link"))
     end
     @inbounds for work_row in row+1:Ny
-        IH_a *= E.H[work_row] * Aj[work_row]
+        IH_a *= Aj[work_row] * E.H[work_row]
         IH_a *= dag(prime(Aj[work_row], "Link"))
     end
     IH *= E.H[row]
@@ -3013,7 +3013,7 @@ function doSweeps(A::fPEPS,
                   env_maxdim=2maxdim, 
                   do_mag::Bool=false, 
                   prefix="mag", 
-                  max_gauge_iter::Int=200,
+                  max_gauge_iter::Int=100,
                   model::Symbol=:XXZ,
                   two_site_vert::Bool=false,
                   two_site_hori::Bool=false,
