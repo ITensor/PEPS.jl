@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate("..")
 using PEPS, ITensorsGPU, ITensors
-using TimerOutputs, Random, Statistics, ArgParse, CUDAnative, Distributions, Logging, CUDA
+using TimerOutputs, Random, Statistics, ArgParse, Distributions, Logging, CUDA
 
 s = ArgParseSettings()
 @add_arg_table! s begin
@@ -119,8 +119,14 @@ elseif parsed_args["model"] == "Ising"
     end
     H  = PEPS.makeCuH_Ising(Nx, Ny, J, hx, hz)
 end
-@info "Built cA and H"
-# run heaviest functions one time to make Julia compile everything
+
+if parsed_args["simple_update_cutoff"] < 1
+    for col in 1:Nx-1
+        global cA
+        cA = PEPS.gaugeColumn(cA, col, :right; mindim=D, maxdim=D, cutoff=0.0, env_maxdim=χ, max_gauge_iter=10)
+    end
+end
+
 @info "Built cA and H"
 Ls = buildLs(cA, H; mindim=D, maxdim=D)
 @info "Built first Ls"
