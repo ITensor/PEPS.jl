@@ -348,7 +348,7 @@ function gaugeQRHorizontal(A::fPEPS, Aj::Vector{ITensor}, col::Int, ncol::Int, s
         Q = q_dict[col=>side]
         Q, QR_inds, next_col_inds = initQs(A, Q, col, ncol; kwargs...)
     else=#
-    old_Q, old_R, old_ncis, old_QRinds, old_dns = gaugeQR(A, col, side; kwargs...)
+    old_Q, old_R, old_ncis, old_QRinds, old_dns = gaugeQR(A, col, side; max_gauge_iter=10, overlap_cutoff=0.999)
     Q = old_Q 
     QR_inds = old_QRinds
     next_col_inds = old_ncis
