@@ -838,6 +838,45 @@ function updateAncsHorizontal(A::fPEPS, Aj::Vector{ITensor},
     return Ancs
 end
 
+function joincols(A::fPEPS, col::Int, ncol::Int)::Tuple{Vector{ITensor}, Vector{ITensor}}
+    Ny, Nx = size(A)
+    Aj = Vector{ITensor}(undef, Ny)
+    cis = Vector{ITensor}(undef, Ny-1)
+    for row in 1:Ny
+        Aj[row] = A[row, col]*A[row, ncol]
+        if row > 1
+            Aj[row] *= cis[row-1]
+        end
+        if row < Ny
+            ci = combiner(commonindex(A[row, col], A[row+1,col]), commonindex(A[row, ncol], A[row+1, ncol]), tags="Link,u,ji$row")
+            Aj[row] *= ci
+            cis[row] = ci
+        end
+    end
+    return Aj, cis
+end
+
+function unjoincols(A::fPEPS, Aj::Vector{ITensor}, cis::Vector{ITensor}, col::Int, ncol::Int)::fPEPS
+    Ny, Nx = size(A)
+    for row in 1:Ny
+        if row > 1
+            Aj[row] *= cis[row-1]
+        end
+        if row < Ny
+            Aj[row] *= cis[row]
+        end
+    end
+    for row in 1:Ny
+        col_is       = commoninds(Aj[row], A[row, col])
+        cnc_ci       = commonind(A[row, col], A[row, ncol])
+        U, S, V      = svd(Aj[row], col_is; mindim=dim(cnc_ci), maxdim=dim(cnc_ci), lefttags=tags(cnc_ci), cutoff=0.)
+        A[row, col]  = U
+        A[row, ncol] = S*V
+    end
+    D = dim(commonind(A[1, col], A[1, ncol]))
+    return A
+end
+
 function sweepColumnHorizontal(A::fPEPS, 
                                L::Environments, R::Environments, 
                                H, col::Int, ncol::Int; 
@@ -847,24 +886,6 @@ function sweepColumnHorizontal(A::fPEPS,
     is_cu  = is_gpu(A)
     dummyI = is_cu ? MPS([cuITensor(1.0) for ii in 1:Ny], 0, Ny+1) : MPS([ITensor(1.0) for ii in 1:Ny], 0, Ny+1)
     dummyEnv = Environments(dummyI, dummyI, fill(ITensor(), 1, Ny), fill(ITensor(), 1, Ny)) 
-    #=@timeit "intraColumnGauge" begin
-        A = intraColumnGauge(A, col; kwargs...)
-    end
-    L_s = buildLs(A, H; kwargs...)
-    R_s = buildRs(A, H; kwargs...)
-    if 1 < col < Nx
-        EAncEnvs = buildAncs(A, L_s[col - 1], R_s[col + 1], H, col)
-        N, E = measureEnergy(A, L_s[col - 1], R_s[col + 1], EAncEnvs, H, 1, col)
-        println("Energy at col $col: ", E/(Nx*Ny), " and norm: ", N)
-    elseif col == 1
-        EAncEnvs = buildAncs(A, dummyEnv, R_s[col + 1], H, col)
-        N, E = measureEnergy(A, dummyEnv, R_s[col + 1], EAncEnvs, H, 1, col)
-        println("Energy at col $col: ", E/(Nx*Ny), " and norm: ", N)
-    elseif col == Nx
-        EAncEnvs = buildAncs(A, L_s[col - 1], dummyEnv, H, col)
-        N, E = measureEnergy(A, L_s[col - 1], dummyEnv, EAncEnvs, H, 1, col)
-        println("Energy at col $col: ", E/(Nx*Ny), " and norm: ", N)
-    end=#
     @debug "Beginning buildAncs for col $col"
     Aj, jis = joincols(A, col, ncol)
     @timeit "intraColumnGauge Aj" begin

@@ -177,46 +177,6 @@ function spinI(s::Index; is_gpu::Bool=false)::ITensor
     return I
 end
 
-function combine(Aorig::ITensor, Anext::ITensor, tags::String)::ITensor
-    ci        = commonind(Aorig, Anext)
-    return combiner(IndexSet(ci, prime(ci)), tags=tags)
-end
-
-function reconnect(combiner_ind::Index, environment::ITensor)
-    environment_combiner = firstind(environment, "Site")
-    new_combiner         = combiner(IndexSet(combiner_ind, prime(combiner_ind)), tags="Site")
-    combined_ind         = combinedind(new_combiner)
-    combiner_transfer    = δ(combined_ind, environment_combiner)
-    
-    #return new_combiner*combiner_transfer
-    replaceind!(new_combiner, combined_ind, environment_combiner)
-    return new_combiner
-end
-
-function nonWorkRow(A::fPEPS, 
-                    L::Environments, 
-                    R::Environments, 
-                    H::Operator, 
-                    row::Int, 
-                    col::Int)::ITensor
-    Ny, Nx  = size(A)
-    op_rows = H.sites
-    is_cu   = is_gpu(A) 
-    ops     = deepcopy(H.ops)
-    @inbounds for op_ind in 1:length(ops)
-        as = firstind(A[op_rows[op_ind][1][1], col], "Site")
-        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind, as)
-        ops[op_ind] = replaceind!(ops[op_ind], H.site_ind', as')
-    end
-    op = spinI(firstind(A[row, col], "Site"); is_gpu=is_cu)
-    op_ind = findfirst( x -> x == row, op_rows)
-    AA *= L.I[row]
-    AA *= A[row, col] * op
-    AA *= R.I[row]
-    AA *= dag(A[row, col])'
-    return AA
-end
-
 function intraColumnGauge(A::fPEPS, col::Int; kwargs...)::fPEPS
     Ny, Nx = size(A)
     @inbounds for row in reverse(2:Ny)
@@ -330,45 +290,6 @@ function measureEnergy(A::fPEPS,
     localH    = sum(Hs)
     initial_E = collect(localH * dag(A[row, col])')
     return real(scalar(initial_N)), real(scalar(initial_E))/real(scalar(initial_N))
-end
-
-function joincols(A::fPEPS, col::Int, ncol::Int)::Tuple{Vector{ITensor}, Vector{ITensor}}
-    Ny, Nx = size(A)
-    Aj = Vector{ITensor}(undef, Ny)
-    cis = Vector{ITensor}(undef, Ny-1)
-    for row in 1:Ny
-        Aj[row] = A[row, col]*A[row, ncol]
-        if row > 1
-            Aj[row] *= cis[row-1]
-        end
-        if row < Ny
-            ci = combiner(commonindex(A[row, col], A[row+1,col]), commonindex(A[row, ncol], A[row+1, ncol]), tags="Link,u,ji$row")
-            Aj[row] *= ci
-            cis[row] = ci
-        end
-    end
-    return Aj, cis
-end
-
-function unjoincols(A::fPEPS, Aj::Vector{ITensor}, cis::Vector{ITensor}, col::Int, ncol::Int)::fPEPS
-    Ny, Nx = size(A)
-    for row in 1:Ny
-        if row > 1
-            Aj[row] *= cis[row-1]
-        end
-        if row < Ny
-            Aj[row] *= cis[row]
-        end
-    end
-    for row in 1:Ny
-        col_is       = commoninds(Aj[row], A[row, col])
-        cnc_ci       = commonind(A[row, col], A[row, ncol])
-        U, S, V      = svd(Aj[row], col_is; mindim=dim(cnc_ci), maxdim=dim(cnc_ci), lefttags=tags(cnc_ci), cutoff=0.)
-        A[row, col]  = U
-        A[row, ncol] = S*V
-    end
-    D = dim(commonind(A[1, col], A[1, ncol]))
-    return A
 end
 
 function rightwardSweep(A::fPEPS, 
